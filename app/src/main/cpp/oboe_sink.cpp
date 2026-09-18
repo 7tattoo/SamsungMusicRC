@@ -72,6 +72,12 @@ Java_com_spotify_music_audio_OboeAudioOutput_nativeOpen(
     }
 
     oboe::Result result = builder.openStream(sink->stream);
+    if ((result != oboe::Result::OK || !sink->stream) && exclusive) {
+        // Exclusive USB DAC is requested, but not every device/firmware can open it.
+        // Retry the same stream without exclusive mode so the backend can still play.
+        builder.setSharingMode(oboe::SharingMode::Shared);
+        result = builder.openStream(sink->stream);
+    }
     if (result != oboe::Result::OK || !sink->stream) {
         delete sink;
         return 0;

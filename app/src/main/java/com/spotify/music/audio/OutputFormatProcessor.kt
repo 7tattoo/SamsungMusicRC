@@ -96,6 +96,7 @@ class OutputFormatProcessor(
         "24" -> C.ENCODING_PCM_24BIT
         "32" -> C.ENCODING_PCM_32BIT
         "float" -> C.ENCODING_PCM_FLOAT
+        "auto" -> if (preferFloatWhenAutomatic) C.ENCODING_PCM_FLOAT else C.ENCODING_PCM_16BIT
         else -> if (preferFloatWhenAutomatic) C.ENCODING_PCM_FLOAT else inputEncoding
     }
 

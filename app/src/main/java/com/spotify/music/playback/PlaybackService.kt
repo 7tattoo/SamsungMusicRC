@@ -154,7 +154,7 @@ class PlaybackService : MediaLibraryService() {
                     sonic,
                     com.spotify.music.audio.OutputFormatProcessor(
                         // AAudio endpoint is opened as PCM float; manual integer depth applies to AudioTrack.
-                        requestedBitDepth = if (useNativeSink) "float" else settings.audioBitDepth,
+                        requestedBitDepth = settings.audioBitDepth,
                         preferFloatWhenAutomatic = enableFloatOutput,
                     ),
                 )

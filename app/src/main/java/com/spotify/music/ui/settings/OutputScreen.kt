@@ -219,7 +219,7 @@ fun OutputScreen(onBack: () -> Unit, onOutputChanged: () -> Unit = {}) {
                 Column(Modifier.weight(1f)) {
                     Text("输出位深", fontSize = 15.sp, color = TextPrimary)
                     Text(
-                        "位深设置作用于系统 AudioTrack；AAudio 原生端固定使用 Float32",
+                        "AudioTrack 与 Oboe 后端均可选；自动模式使用 16bit 默认位深",
                         fontSize = 12.sp,
                         color = TextSecondary,
                         modifier = Modifier.padding(top = 3.dp),
