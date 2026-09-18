@@ -76,9 +76,8 @@ class OboeAudioOutput {
                     .onFailure { t ->
                         com.spotify.music.util.CrashLogger.log(
                             t,
-                            "OboeAudioOutput ensureLoaded | " +
-                                "缺少 arm64 原生库 libsamsung_oboe.so / liboboe.so / libc++_shared.so，" +
-                                "Oboe 输出不可用；请确认 APK 已携带 jniLibs/arm64-v8a 完整依赖",
+                            "OboeAudioOutput ensureLoaded | 原生库加载失败（可能是 ABI、依赖库或符号不匹配）：" +
+                                "${t.message}; Oboe 输出不可用",
                         )
                     }
                     .isSuccess
