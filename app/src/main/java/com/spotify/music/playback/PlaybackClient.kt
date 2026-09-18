@@ -140,6 +140,15 @@ class PlaybackClient private constructor(private val context: Context) {
         }
     }
 
+    fun rebuildAudioOutput() {
+        try {
+            val c = controller ?: return
+            c.sendCustomCommand(SessionCommand(PlaybackService.CMD_REBUILD_OUTPUT, Bundle.EMPTY), Bundle.EMPTY)
+        } catch (t: Throwable) {
+            CrashLogger.log(t, "rebuildAudioOutput")
+        }
+    }
+
     fun applySettings() {
         try {
             val c = controller ?: return

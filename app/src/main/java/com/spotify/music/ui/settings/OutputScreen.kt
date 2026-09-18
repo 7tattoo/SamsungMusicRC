@@ -15,6 +15,8 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -39,10 +41,10 @@ import kotlinx.coroutines.delay
  * 输出信息页：显示实时音频输出链路（设备 / 采样率 / 位深 / 声道 / 软件音效链）。
  * 数据来自 AudioProcessor onConfigure 的实际 PCM 参数 + AudioManager 当前输出设备。
  *
- * 说明：USB DAC 独占模式需要把音频输出整体替换为 Oboe/AAudio 原生链路，属于后续版本。
+ * 输出参数变更后会保留队列并重建播放内核；两种模式都使用 Media3 DSP/输出格式处理链。
  */
 @Composable
-fun OutputScreen(onBack: () -> Unit) {
+fun OutputScreen(onBack: () -> Unit, onOutputChanged: () -> Unit = {}) {
     val context = LocalContext.current
     var tick by remember { mutableIntStateOf(0) }
     var showDepthDialog by remember { mutableStateOf(false) }
@@ -50,7 +52,10 @@ fun OutputScreen(onBack: () -> Unit) {
         com.spotify.music.data.SettingsRepository.get(context)
     }
     var bitDepth by remember { mutableStateOf(settings.audioBitDepth) }
+    var targetSampleRate by remember { mutableIntStateOf(settings.audioSampleRate) }
+    var showRateDialog by remember { mutableStateOf(false) }
     var outputMode by remember { mutableStateOf(settings.audioOutputMode) }
+    var usbExclusive by remember { mutableStateOf(settings.usbExclusive) }
     var showModeDialog by remember { mutableStateOf(false) }
     var showDeviceDialog by remember { mutableStateOf(false) }
     var outputDeviceId by remember { mutableIntStateOf(settings.audioOutputDeviceId) }
@@ -78,7 +83,13 @@ fun OutputScreen(onBack: () -> Unit) {
         }
     }
 
-    val deviceName = remember(tick) { currentOutputDevice(audioManager) }
+    val deviceName = remember(tick, outputMode, devices) {
+        if (outputMode != "system") {
+            val activeId = EqState.outDeviceId
+            if (activeId > 0) devices.firstOrNull { it.id == activeId }?.let { deviceLabel(it) } ?: "Oboe 设备 ID $activeId"
+            else "Oboe 自动路由"
+        } else "AudioTrack · 系统路由"
+    }
     val sampleRate = EqState.outSampleRate
     val channelCount = EqState.outChannelCount
     val encoding = EqState.encodingLabel()
@@ -127,17 +138,35 @@ fun OutputScreen(onBack: () -> Unit) {
                 Column(Modifier.weight(1f)) {
                     Text("输出模式", fontSize = 15.sp, color = TextPrimary)
                     Text(
-                        "AAudio 原生链：USB DAC 独占优先，独占不可用自动回退共享；重启应用生效。",
+                        "Halcyon Oboe 后端：可选 AAudio / OpenSL ES；USB DAC 独占需单独开启。",
                         fontSize = 12.sp,
                         color = TextSecondary,
                         modifier = Modifier.padding(top = 3.dp),
                     )
                 }
                 Text(
-                    if (outputMode == "native") "AAudio 原生" else "系统（默认）",
+                    when (outputMode) { "aaudio" -> "AAudio（Oboe）"; "opensles" -> "OpenSL ES（Oboe）"; else -> "AudioTrack（系统）" },
                     fontSize = 15.sp,
                     color = SamsungBlue,
                     fontWeight = FontWeight.SemiBold,
+                )
+            }
+            Divider()
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
+            ) {
+                Column(Modifier.weight(1f).padding(end = 10.dp)) {
+                    Text("USB DAC 独占模式", fontSize = 15.sp, color = TextPrimary)
+                    Text("仅 AAudio 后端有效；不支持时 Oboe 自动使用共享模式", fontSize = 12.sp, color = TextSecondary, modifier = Modifier.padding(top = 3.dp))
+                }
+                Switch(
+                    checked = usbExclusive,
+                    onCheckedChange = {
+                        usbExclusive = it
+                        settings.usbExclusive = it
+                        onOutputChanged()
+                    },
+                    colors = SwitchDefaults.colors(checkedTrackColor = Color(0xFF8A90DE)),
                 )
             }
             Divider()
@@ -150,7 +179,7 @@ fun OutputScreen(onBack: () -> Unit) {
                 Column(Modifier.weight(1f)) {
                     Text("输出通道", fontSize = 15.sp, color = TextPrimary)
                     Text(
-                        "指定输出到扬声器/耳机/USB DAC/蓝牙（仅 AAudio 原生模式生效，重启应用生效）",
+                        "指定输出到扬声器/耳机/USB DAC/蓝牙（AAudio 原生模式生效）",
                         fontSize = 12.sp,
                         color = TextSecondary,
                         modifier = Modifier.padding(top = 3.dp),
@@ -171,20 +200,33 @@ fun OutputScreen(onBack: () -> Unit) {
             Row(
                 Modifier
                     .fillMaxWidth()
+                    .clickable { showRateDialog = true }
+                    .padding(horizontal = 16.dp, vertical = 14.dp),
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text("输出采样率", fontSize = 15.sp, color = TextPrimary)
+                    Text("自动跟随音源，或指定目标采样率（两种输出模式均生效）", fontSize = 12.sp, color = TextSecondary, modifier = Modifier.padding(top = 3.dp))
+                }
+                Text(if (targetSampleRate > 0) "${targetSampleRate / 1000f} kHz" else "自动", fontSize = 15.sp, color = SamsungBlue, fontWeight = FontWeight.SemiBold)
+            }
+            Divider()
+            Row(
+                Modifier
+                    .fillMaxWidth()
                     .clickable { showDepthDialog = true }
                     .padding(horizontal = 16.dp, vertical = 14.dp),
             ) {
                 Column(Modifier.weight(1f)) {
                     Text("输出位深", fontSize = 15.sp, color = TextPrimary)
                     Text(
-                        "系统模式有效；切换后重启应用生效；设备不支持 float 时自动回退 16bit",
+                        "位深设置作用于系统 AudioTrack；AAudio 原生端固定使用 Float32",
                         fontSize = 12.sp,
                         color = TextSecondary,
                         modifier = Modifier.padding(top = 3.dp),
                     )
                 }
                 Text(
-                    if (bitDepth == "float") "32bit float" else "16bit",
+                    when (bitDepth) { "auto" -> "自动"; "24" -> "24bit"; "32" -> "32bit"; "float" -> "32bit float"; else -> "16bit" },
                     fontSize = 15.sp,
                     color = SamsungBlue,
                     fontWeight = FontWeight.SemiBold,
@@ -209,11 +251,10 @@ fun OutputScreen(onBack: () -> Unit) {
         SectionCard {
             Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
                 Text(
-                    "以上为解码后送入音频输出端的实际 PCM 参数。\n\n" +
-                        "「AAudio 原生」模式：绕过系统混音直驱音频设备，USB DAC 独占（MMAP）优先，" +
-                        "独占不可用时自动回退共享模式；均衡器/环绕/低音/高音在原生回调内 DSP 处理，" +
-                        "效果与系统模式一致；倍速暂不生效。\n" +
-                        "「系统」模式：走系统混音，兼容性最好。",
+                    "以上为解码后经 DSP/格式处理后的 PCM 参数。\n\n" +
+                        "「AAudio / OpenSL ES（Oboe）」模式：由 Oboe 打开原生输出流，Media3 DSP/格式处理链在写入前运行；" +
+                        "独占模式只对兼容的 AAudio USB DAC 请求，失败由 Oboe 回退共享。原生模式端点按 Oboe 协商 PCM 格式。\n" +
+                        "「系统」模式：走 Android AudioTrack 系统混音，兼容性更好，支持播放速度和跳过静音。",
                     fontSize = 13.sp,
                     color = TextSecondary,
                     lineHeight = 19.sp,
@@ -224,13 +265,34 @@ fun OutputScreen(onBack: () -> Unit) {
         Spacer(Modifier.height(24.dp))
     }
 
+    if (showRateDialog) {
+        AlertDialog(
+            onDismissRequest = { showRateDialog = false },
+            title = { Text("输出采样率") },
+            text = {
+                Column(Modifier.height(320.dp).verticalScroll(rememberScrollState())) {
+                    val rates = listOf(0, 44100, 48000, 88200, 96000, 176400, 192000)
+                    rates.forEach { rate ->
+                        val label = if (rate == 0) "自动（跟随音源）" else "${rate / 1000f} kHz"
+                        DeviceRow(label, targetSampleRate == rate) {
+                            targetSampleRate = rate
+                            settings.audioSampleRate = rate
+                            showRateDialog = false
+                            onOutputChanged()
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { showRateDialog = false }) { Text("取消") } },
+        )
+    }
     if (showDepthDialog) {
         AlertDialog(
             onDismissRequest = { showDepthDialog = false },
             title = { Text("输出位深") },
             text = {
                 Column {
-                    listOf("16bit" to "16", "32bit float" to "float").forEach { (label, v) ->
+                    listOf("自动（播放器协商）" to "auto", "16bit" to "16", "24bit" to "24", "32bit" to "32", "32bit float" to "float").forEach { (label, v) ->
                         Row(
                             Modifier
                                 .fillMaxWidth()
@@ -238,6 +300,7 @@ fun OutputScreen(onBack: () -> Unit) {
                                     bitDepth = v
                                     settings.audioBitDepth = v
                                     showDepthDialog = false
+                                    onOutputChanged()
                                 }
                                 .padding(vertical = 12.dp),
                         ) {
@@ -266,12 +329,14 @@ fun OutputScreen(onBack: () -> Unit) {
                         outputDeviceId = -1
                         settings.audioOutputDeviceId = -1
                         showDeviceDialog = false
+                        onOutputChanged()
                     }
                     devices.forEach { d ->
                         DeviceRow(deviceLabel(d), outputDeviceId == d.id) {
                             outputDeviceId = d.id
                             settings.audioOutputDeviceId = d.id
                             showDeviceDialog = false
+                            onOutputChanged()
                         }
                     }
                 }
@@ -288,8 +353,9 @@ fun OutputScreen(onBack: () -> Unit) {
             text = {
                 Column {
                     listOf(
-                        "系统（AudioTrack，兼容最好）" to "system",
-                        "AAudio 原生（USB DAC 独占优先）" to "native",
+                        "系统（AudioTrack，兼容优先）" to "system",
+                        "AAudio（Oboe）" to "aaudio",
+                        "OpenSL ES（Oboe 兼容后端）" to "opensles",
                     ).forEach { (label, v) ->
                         Row(
                             Modifier
@@ -298,6 +364,7 @@ fun OutputScreen(onBack: () -> Unit) {
                                     outputMode = v
                                     settings.audioOutputMode = v
                                     showModeDialog = false
+                                    onOutputChanged()
                                 }
                                 .padding(vertical = 12.dp),
                         ) {

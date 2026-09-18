@@ -45,7 +45,7 @@ class PlayerUiState(
     var currentSong by mutableStateOf<Song?>(null)
         private set
     var shuffleEnabled by mutableStateOf(false)
-        private set
+    var showQueue by mutableStateOf(false)
     var repeatMode by mutableIntStateOf(Player.REPEAT_MODE_OFF)
         private set
     var queueCount by mutableIntStateOf(0)

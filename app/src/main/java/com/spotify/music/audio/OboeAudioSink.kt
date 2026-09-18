@@ -4,402 +4,349 @@ import androidx.media3.common.AudioAttributes
 import androidx.media3.common.AuxEffectInfo
 import androidx.media3.common.C
 import androidx.media3.common.Format
+import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackParameters
+import androidx.media3.common.audio.AudioProcessingPipeline
 import androidx.media3.common.audio.AudioProcessor
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.common.util.Util
 import androidx.media3.exoplayer.audio.AudioSink
-import androidx.media3.exoplayer.audio.AudioSink.AudioSinkConfig
-import androidx.media3.exoplayer.audio.AudioSink.InitializationException
-import androidx.media3.exoplayer.audio.AudioSink.Listener
-import androidx.media3.exoplayer.audio.AudioSink.WriteException
-import androidx.media3.exoplayer.audio.AudioSink.CURRENT_POSITION_NOT_SET
-import androidx.media3.exoplayer.audio.AudioSink.SINK_FORMAT_SUPPORTED_DIRECTLY
-import androidx.media3.exoplayer.audio.AudioSink.SINK_FORMAT_SUPPORTED_WITH_TRANSCODING
-import androidx.media3.exoplayer.audio.AudioSink.SINK_FORMAT_UNSUPPORTED
+import com.google.common.collect.ImmutableList
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
 /**
- * AAudio 原生音频输出（USB DAC 独占模式优先，独占不可用时自动回退共享模式）。
+ * A Media3 [AudioSink] that outputs decoded PCM through a native Oboe stream (AAudio / OpenSL ES)
+ * instead of the Java AudioTrack used by DefaultAudioSink. The configured [processors] (EQ, output
+ * format conversion) run inside an [AudioProcessingPipeline] before the PCM is handed to Oboe.
  *
- * 数据链：Media3 播放线程 → PCM 转 float → JNI → 无锁 SPSC 环形缓冲 → AAudio 回调 → DAC。
+ * This is a first, functional implementation; playback-speed changes and per-sink volume are not
+ * applied to the Oboe stream yet (system volume still works), and it needs on-device tuning.
  *
- * 已知取舍（v1）：
- * - 倍速不生效（恒为 1.0，位置换算按 1.0 对齐，不会错拍）
- * - 跳过静音不生效
- * - 软件均衡器/环绕增强走 DefaultAudioSink 的 AudioProcessor 链，原生模式下不经过，不生效
+ * [audioApi]: 1 = AAudio, 2 = OpenSL ES. [exclusive]: request exclusive sharing mode (USB / bit-perfect).
  */
 @UnstableApi
+@Suppress("DEPRECATION", "OVERRIDE_DEPRECATION")
 class OboeAudioSink(
-    private val preferExclusive: Boolean = true,
-    private val deviceId: Int = -1,
+    private val audioApi: Int = AUDIO_API_AAUDIO,
+    private val exclusive: Boolean = false,
+    processors: List<AudioProcessor> = emptyList(),
+    private val deviceId: Int = 0
 ) : AudioSink {
 
-    companion object {
-        init {
-            System.loadLibrary("samsung_audio")
-        }
-    }
+    private val pipeline = AudioProcessingPipeline(ImmutableList.copyOf(processors))
 
-    private var listener: Listener? = null
+    private var listener: AudioSink.Listener? = null
+    private var oboe: OboeAudioOutput? = null
 
-    // ── 配置状态 ──
-    private var pendingFormat: Format? = null
-    private var pendingChannelMap: IntArray? = null
     private var configuredFormat: Format? = null
-    private var activeChannelMap: IntArray? = null
-    private var streamOpened = false
-    private var openFailed = false
-    private var everStarted = false
-    private var ended = false
+    private var outputSampleRate = 0
+    private var outputChannelCount = 0
+    private var outputEncoding = C.ENCODING_PCM_16BIT
+    private var outputFrameSize = 4
+    private var oboeEncodingId = 0
 
-    /** play() 可能在流打开之前被调（BUFFERING 阶段），打开后据此补启动 */
-    private var playRequested = false
+    private var pendingOutput: ByteBuffer? = null
+    private var directScratch: ByteBuffer = EMPTY
+
+    private var startMediaTimeUs = C.TIME_UNSET
+    private var framesSubmitted = 0L
+    private var inputEnded = false
+    private var playing = false
 
     private var volume = 1f
-    private var skipSilence = false
-    private var attrs: AudioAttributes? = null
-    private var lastStatusAt = 0L
+    private var audioAttributes = AudioAttributes.DEFAULT
+    private var playbackParameters = PlaybackParameters.DEFAULT
+    private var skipSilenceEnabled = false
 
-    // 转换暂存
-    private var scratch = FloatArray(0)
-
-    // ── JNI ──
-    private external fun nativeCreateStream(sampleRate: Int, channels: Int, exclusive: Boolean, deviceId: Int): Int
-    private external fun nativeStart(): Boolean
-    private external fun nativePause(): Boolean
-    private external fun nativeFlushStream(): Boolean
-    private external fun nativeCloseStream(): Boolean
-    private external fun nativeWriteFloats(values: FloatArray, frames: Int): Int
-    private external fun nativeFramesWritten(): Long
-    private external fun nativeQueuedFrames(): Int
-    private external fun nativeFreeFrames(): Int
-    private external fun nativeGetXRuns(): Int
-    private external fun nativeIsExclusive(): Boolean
-    private external fun nativeStreamDead(): Boolean
-    private external fun nativeBufferSizeFrames(): Int
-    private external fun nativeSetVolume(v: Float)
-    private external fun nativeSetEq(enabled: Boolean, preampDb: Float, bassDb: Float, trebleDb: Float, width: Float, bands: FloatArray)
-
-    /**
-     * 把 EqState 当前参数推送到原生 DSP。
-     * 原生模式下由 PlaybackService 在设置变化/恢复时调用。
-     */
-    fun pushEq() {
-        runCatching {
-            nativeSetEq(
-                com.spotify.music.audio.EqState.enabled,
-                com.spotify.music.audio.EqState.preampDb,
-                com.spotify.music.audio.EqState.bassBoostDb,
-                com.spotify.music.audio.EqState.trebleDb,
-                com.spotify.music.audio.EqState.width,
-                com.spotify.music.audio.EqState.bandGainsDb,
-            )
-        }
-    }
-
-    // ── AudioSink 实现 ──
-
-    override fun setListener(listener: Listener) {
+    override fun setListener(listener: AudioSink.Listener) {
         this.listener = listener
     }
 
     override fun supportsFormat(format: Format): Boolean =
-        getFormatSupport(format) != SINK_FORMAT_UNSUPPORTED
+        getFormatSupport(format) != AudioSink.SINK_FORMAT_UNSUPPORTED
 
-    override fun getFormatSupport(format: Format): Int {
-        val encoding = format.pcmEncoding
-        return when {
-            format.sampleRate <= 0 || format.channelCount <= 0 -> SINK_FORMAT_UNSUPPORTED
-            encoding == C.ENCODING_PCM_16BIT || encoding == C.ENCODING_PCM_FLOAT ->
-                SINK_FORMAT_SUPPORTED_DIRECTLY
-            encoding == C.ENCODING_PCM_24BIT || encoding == C.ENCODING_PCM_32BIT ->
-                SINK_FORMAT_SUPPORTED_WITH_TRANSCODING
-            else -> SINK_FORMAT_UNSUPPORTED
+    override fun getFormatSupport(format: Format): Int =
+        if (MimeTypes.AUDIO_RAW == format.sampleMimeType && Util.isEncodingLinearPcm(format.pcmEncoding)) {
+            AudioSink.SINK_FORMAT_SUPPORTED_DIRECTLY
+        } else {
+            AudioSink.SINK_FORMAT_UNSUPPORTED
         }
-    }
 
-    @Deprecated("Deprecated in AudioSink")
+    @Throws(AudioSink.ConfigurationException::class)
     override fun configure(inputFormat: Format, specifiedBufferSize: Int, outputChannels: IntArray?) {
-        pendingFormat = inputFormat
-        pendingChannelMap = normalizeMap(outputChannels)
-    }
-
-    override fun configure(config: AudioSinkConfig) {
-        val map = config.outputChannelMapping
-        configure(config.format, config.preferredBufferSizeOverride, map?.takeIf { !it.isEmpty }?.toArray())
-    }
-
-    override fun handleBuffer(buffer: ByteBuffer, presentationTimeUs: Long, encodedAccessUnitCount: Int): Boolean {
-        buffer.order(ByteOrder.nativeOrder())
-        applyPendingConfig()
-        val format = configuredFormat ?: return true // 未配置：按契约丢弃
-        if (openFailed) throw WriteException(-2, format, false)
-        if (nativeStreamDead()) {
-            // 设备被拔掉等致命错误：交回 ExoPlayer 处理
-            throw WriteException(-3, format, false)
-        }
-        if (!streamOpened) openStream(format)
-        // play() 可能先于首个 handleBuffer 到来（BUFFERING 阶段被跳过），这里补启动
-        if (playRequested && !ended) {
-            nativeSetVolume(volume)
-            startStream("after-open")
+        configuredFormat = inputFormat
+        val inputAudioFormat = AudioProcessor.AudioFormat(
+            inputFormat.sampleRate,
+            inputFormat.channelCount,
+            inputFormat.pcmEncoding
+        )
+        val outputAudioFormat = try {
+            val configured = pipeline.configure(inputAudioFormat)
+            pipeline.flush()
+            if (pipeline.isOperational) configured else inputAudioFormat
+        } catch (e: AudioProcessor.UnhandledAudioFormatException) {
+            throw AudioSink.ConfigurationException(e, inputFormat)
         }
 
-        // 每 5 秒采一次 sink 状态（排查无声/卡缓冲用）
-        val now = android.os.SystemClock.elapsedRealtime()
-        if (now - lastStatusAt > 5_000) {
-            lastStatusAt = now
-            com.spotify.music.util.CrashLogger.trace(
-                "OboeSink status rate=${format.sampleRate} queued=${nativeQueuedFrames()} " +
-                    "written=${nativeFramesWritten()} xrun=${nativeGetXRuns()}"
-            )
+        outputSampleRate = outputAudioFormat.sampleRate
+        outputChannelCount = outputAudioFormat.channelCount
+        outputEncoding = outputAudioFormat.encoding
+        oboeEncodingId = encodingToOboeId(outputEncoding)
+        outputFrameSize = outputChannelCount * bytesPerSample(outputEncoding)
+
+        oboe?.close()
+        val output = OboeAudioOutput()
+        if (!output.open(audioApi, outputSampleRate, outputChannelCount, oboeEncodingId, exclusive, deviceId)) {
+            throw AudioSink.ConfigurationException("Unable to open Oboe output stream", inputFormat)
         }
-
-        val inCh = format.channelCount
-        val map = activeChannelMap
-        val outCh = map?.size ?: inCh
-        val bytesPerFrame = bytesPerSample(format.pcmEncoding) * inCh
-
-        while (buffer.hasRemaining()) {
-            val free = nativeFreeFrames()
-            if (free <= 0) return false // 环满：让渲染器稍后重试同一 buffer
-            val frames = minOf(free, buffer.remaining() / bytesPerFrame)
-            if (frames <= 0) return false
-            convertChunk(buffer, frames, format.pcmEncoding, inCh, outCh, map)
-            val written = nativeWriteFloats(scratch, frames)
-            // 单生产者模型下 free 只增不减，正常必然全部写入；万一不足，跳过该帧保持同步
-            if (written < frames) {
-                com.spotify.music.util.CrashLogger.log(
-                    IllegalStateException("ring write short: want=$frames got=$written"), "OboeAudioSink"
-                )
-            }
-        }
-        return true
-    }
-
-    override fun getCurrentPositionUs(sourceEnded: Boolean): Long {
-        if (!streamOpened || !everStarted) return CURRENT_POSITION_NOT_SET
-        val frames = nativeFramesWritten()
-        if (frames <= 0 && !sourceEnded) return CURRENT_POSITION_NOT_SET
-        return frames * 1_000_000L / configuredFormat!!.sampleRate
+        oboe = output
+        if (!playing) output.pause()
+        resetPlaybackState()
     }
 
     override fun play() {
-        playRequested = true
-        if (!streamOpened || ended) return
-        nativeSetVolume(volume)
-        startStream("play")
-    }
-
-    override fun handleDiscontinuity() {
-        // 位置不连续由 flush/reset 处理，无需额外操作
-    }
-
-    override fun playToEndOfStream() {
-        val format = configuredFormat ?: run {
-            ended = true
-            return
-        }
-        var waited = 0L
-        while (nativeQueuedFrames() > 0) {
-            if (nativeStreamDead()) throw WriteException(-3, format, false)
-            if (waited > 30_000) throw WriteException(-4, format, false)
-            Thread.sleep(10)
-            waited += 10
-        }
-        ended = true
-    }
-
-    override fun isEnded(): Boolean = ended && nativeQueuedFrames() <= 0
-
-    override fun hasPendingData(): Boolean = nativeQueuedFrames() > 0
-
-    override fun setPlaybackParameters(playbackParameters: PlaybackParameters) {
-        // v1：不应用倍速，getPlaybackParameters 恒回 1.0 保证位置换算一致
-    }
-
-    override fun getPlaybackParameters(): PlaybackParameters = PlaybackParameters(1f)
-
-    override fun setSkipSilenceEnabled(skipSilenceEnabled: Boolean) {
-        skipSilence = skipSilenceEnabled
-    }
-
-    override fun getSkipSilenceEnabled(): Boolean = skipSilence
-
-    override fun setAudioAttributes(audioAttributes: AudioAttributes) {
-        attrs = audioAttributes
-    }
-
-    override fun getAudioAttributes(): AudioAttributes =
-        attrs ?: AudioAttributes.Builder()
-            .setUsage(C.USAGE_MEDIA)
-            .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
-            .build()
-
-    override fun setAudioSessionId(audioSessionId: Int) {
-        // AAudio 不使用 audioSessionId
-    }
-
-    override fun setAuxEffectInfo(auxEffectInfo: AuxEffectInfo) {
-        // 不支持辅助音效
-    }
-
-    override fun getAudioTrackBufferSizeUs(): Long {
-        if (!streamOpened) return 0L
-        val frames = nativeBufferSizeFrames()
-        return if (frames > 0) frames * 1_000_000L / configuredFormat!!.sampleRate else 0L
-    }
-
-    override fun enableTunnelingV21() {
-        // 不支持隧道播放
-    }
-
-    override fun disableTunneling() {
-        // no-op
-    }
-
-    override fun setVolume(volume: Float) {
-        this.volume = volume.coerceIn(0f, 1f)
-        nativeSetVolume(this.volume)
+        playing = true
+        oboe?.start()
     }
 
     override fun pause() {
-        playRequested = false
-        if (streamOpened) nativePause()
+        playing = false
+        oboe?.pause()
+    }
+
+    override fun handleDiscontinuity() {
+        startMediaTimeUs = C.TIME_UNSET
+    }
+
+    @Throws(AudioSink.InitializationException::class, AudioSink.WriteException::class)
+    override fun handleBuffer(buffer: ByteBuffer, presentationTimeUs: Long, encodedAccessUnitCount: Int): Boolean {
+        if (oboe == null) return false
+        if (startMediaTimeUs == C.TIME_UNSET && buffer.hasRemaining()) {
+            startMediaTimeUs = presentationTimeUs
+        }
+
+        if (pipeline.isOperational) {
+            if (!drainPipeline()) return false
+            if (buffer.hasRemaining()) pipeline.queueInput(buffer)
+            if (!drainPipeline()) return false
+            return !buffer.hasRemaining()
+        }
+        return writeDirect(buffer)
+    }
+
+    @Throws(AudioSink.WriteException::class)
+    override fun playToEndOfStream() {
+        if (!inputEnded) {
+            inputEnded = true
+            if (pipeline.isOperational) pipeline.queueEndOfStream()
+        }
+        if (pipeline.isOperational) drainPipeline()
+    }
+
+    override fun isEnded(): Boolean = inputEnded && !hasPendingData()
+
+    override fun hasPendingData(): Boolean {
+        if (pendingOutput?.hasRemaining() == true) return true
+        if (pipeline.isOperational && !pipeline.isEnded()) return true
+        val read = oboe?.framesRead() ?: 0L
+        return framesSubmitted > read
+    }
+
+    override fun setPlaybackParameters(playbackParameters: PlaybackParameters) {
+        this.playbackParameters = playbackParameters
+    }
+
+    override fun getPlaybackParameters(): PlaybackParameters = playbackParameters
+
+    override fun setSkipSilenceEnabled(skipSilenceEnabled: Boolean) {
+        this.skipSilenceEnabled = skipSilenceEnabled
+    }
+
+    override fun getSkipSilenceEnabled(): Boolean = skipSilenceEnabled
+
+    override fun setAudioAttributes(audioAttributes: AudioAttributes) {
+        this.audioAttributes = audioAttributes
+    }
+
+    override fun getAudioAttributes(): AudioAttributes = audioAttributes
+
+    override fun setAudioSessionId(audioSessionId: Int) {}
+
+    override fun setAuxEffectInfo(auxEffectInfo: AuxEffectInfo) {}
+
+    override fun getAudioTrackBufferSizeUs(): Long = C.TIME_UNSET
+
+    override fun enableTunnelingV21() {}
+
+    override fun disableTunneling() {}
+
+    override fun setVolume(volume: Float) {
+        this.volume = volume
+    }
+
+    override fun getCurrentPositionUs(sourceEnded: Boolean): Long {
+        val output = oboe ?: return AudioSink.CURRENT_POSITION_NOT_SET
+        if (startMediaTimeUs == C.TIME_UNSET || outputSampleRate <= 0) {
+            return AudioSink.CURRENT_POSITION_NOT_SET
+        }
+        val framesRead = output.framesRead()
+        return startMediaTimeUs + framesRead * C.MICROS_PER_SECOND / outputSampleRate
     }
 
     override fun flush() {
-        ended = false
-        playRequested = false
-        if (streamOpened) nativeFlushStream()
+        pipeline.flush()
+        pendingOutput = null
+        // Reopen the stream so getFramesRead() restarts from zero after a seek.
+        val output = oboe
+        if (output != null) {
+            output.close()
+            val reopened = OboeAudioOutput()
+            if (reopened.open(audioApi, outputSampleRate, outputChannelCount, oboeEncodingId, exclusive, deviceId)) {
+                oboe = reopened
+                if (!playing) reopened.pause()
+            } else {
+                oboe = null
+            }
+        }
+        resetPlaybackState()
     }
 
     override fun reset() {
-        ended = false
-        openFailed = false
-        everStarted = false
-        playRequested = false
-        streamOpened = false
+        pipeline.reset()
+        oboe?.close()
+        oboe = null
+        pendingOutput = null
         configuredFormat = null
-        activeChannelMap = null
-        pendingFormat = null
-        pendingChannelMap = null
-        nativeCloseStream()
+        resetPlaybackState()
     }
 
-    // ── 内部 ──
-
-    private fun normalizeMap(map: IntArray?): IntArray? =
-        if (map == null || map.isEmpty() || map.contentEquals(IntArray(map.size) { it })) null else map
-
-    private fun applyPendingConfig() {
-        val pf = pendingFormat ?: return
-        val map = pendingChannelMap
-        pendingFormat = null
-        pendingChannelMap = null
-        val needReopen = streamOpened && (
-            configuredFormat?.sampleRate != pf.sampleRate ||
-                configuredFormat?.channelCount != pf.channelCount ||
-                configuredFormat?.pcmEncoding != pf.pcmEncoding
-            )
-        if (needReopen) {
-            nativeCloseStream()
-            streamOpened = false
-        }
-        configuredFormat = pf
-        activeChannelMap = map
+    private fun resetPlaybackState() {
+        startMediaTimeUs = C.TIME_UNSET
+        framesSubmitted = 0L
+        inputEnded = false
     }
 
-    private fun openStream(format: Format) {
-        val result = nativeCreateStream(format.sampleRate, format.channelCount, preferExclusive, deviceId)
-        if (result != 0) {
-            openFailed = true
-            streamOpened = false
-            com.spotify.music.util.CrashLogger.trace(
-                "OboeSink open FAILED res=$result rate=${format.sampleRate} ch=${format.channelCount} dev=$deviceId"
-            )
-            throw InitializationException(
-                "AAudio open stream failed: $result (rate=${format.sampleRate} ch=${format.channelCount})",
-                0, format, /* isRecoverable = */ false, null,
-            )
+    /** Drains any pending output and everything the pipeline can currently produce. */
+    @Throws(AudioSink.WriteException::class)
+    private fun drainPipeline(): Boolean {
+        while (true) {
+            val pending = pendingOutput
+            if (pending != null && pending.hasRemaining()) {
+                if (!writeToOboe(pending)) return false
+            }
+            val next = pipeline.getOutput()
+            if (!next.hasRemaining()) {
+                pendingOutput = null
+                return true
+            }
+            applyGain(next)
+            pendingOutput = next
         }
-        streamOpened = true
-        openFailed = false
-        nativeSetVolume(volume)
-        pushEq()
-        com.spotify.music.util.CrashLogger.trace(
-            "OboeSink opened rate=${format.sampleRate} ch=${format.channelCount} dev=$deviceId"
-        )
-        // 流一打开，若此前已请求播放则立刻启动，不等下一次 play()
-        if (playRequested && !ended) startStream("after-open")
     }
 
-    private fun startStream(why: String) {
-        val ok = nativeStart()
-        if (ok) {
-            everStarted = true
-            playRequested = false
+    @Throws(AudioSink.WriteException::class)
+    private fun writeDirect(buffer: ByteBuffer): Boolean {
+        if (!buffer.hasRemaining()) return true
+        // Copy into a direct scratch when the input isn't direct OR when we must apply volume gain
+        // (we must never modify the decoder's own buffer in place).
+        val needsCopy = !buffer.isDirect || volume != 1f
+        val toWrite = if (!needsCopy) {
+            buffer
+        } else {
+            val remaining = buffer.remaining()
+            if (directScratch.capacity() < remaining) {
+                directScratch = ByteBuffer.allocateDirect(remaining).order(ByteOrder.nativeOrder())
+            }
+            directScratch.clear()
+            directScratch.put(buffer.duplicate())
+            directScratch.flip()
+            applyGain(directScratch)
+            directScratch
         }
-        com.spotify.music.util.CrashLogger.trace("OboeSink start($why) ok=$ok")
+        val startPos = toWrite.position()
+        val done = writeToOboe(toWrite)
+        val consumed = toWrite.position() - startPos
+        if (needsCopy) {
+            buffer.position(buffer.position() + consumed)
+        }
+        return done && !buffer.hasRemaining()
+    }
+
+    /** Scales the buffer's [position, limit) region in place by [volume], per PCM encoding. */
+    private fun applyGain(buffer: ByteBuffer) {
+        val v = volume
+        if (v == 1f) return
+        val previousOrder = buffer.order()
+        buffer.order(ByteOrder.LITTLE_ENDIAN)
+        var pos = buffer.position()
+        val limit = buffer.limit()
+        when (outputEncoding) {
+            C.ENCODING_PCM_16BIT -> while (pos + 2 <= limit) {
+                val scaled = (buffer.getShort(pos) * v).toInt().coerceIn(-32768, 32767)
+                buffer.putShort(pos, scaled.toShort())
+                pos += 2
+            }
+            C.ENCODING_PCM_32BIT -> while (pos + 4 <= limit) {
+                val scaled = (buffer.getInt(pos) * v.toDouble()).toLong()
+                    .coerceIn(Int.MIN_VALUE.toLong(), Int.MAX_VALUE.toLong())
+                buffer.putInt(pos, scaled.toInt())
+                pos += 4
+            }
+            C.ENCODING_PCM_FLOAT -> while (pos + 4 <= limit) {
+                buffer.putFloat(pos, (buffer.getFloat(pos) * v).coerceIn(-1f, 1f))
+                pos += 4
+            }
+            C.ENCODING_PCM_24BIT -> while (pos + 3 <= limit) {
+                var sample = (buffer.get(pos).toInt() and 0xFF) or
+                    ((buffer.get(pos + 1).toInt() and 0xFF) shl 8) or
+                    ((buffer.get(pos + 2).toInt() and 0xFF) shl 16)
+                if (sample and 0x800000 != 0) sample = sample or -0x1000000
+                val scaled = (sample * v).toInt().coerceIn(-8388608, 8388607)
+                buffer.put(pos, (scaled and 0xFF).toByte())
+                buffer.put(pos + 1, ((scaled shr 8) and 0xFF).toByte())
+                buffer.put(pos + 2, ((scaled shr 16) and 0xFF).toByte())
+                pos += 3
+            }
+        }
+        buffer.order(previousOrder)
+    }
+
+    @Throws(AudioSink.WriteException::class)
+    private fun writeToOboe(buffer: ByteBuffer): Boolean {
+        val output = oboe ?: return false
+        if (!buffer.hasRemaining()) return true
+        val n = output.write(buffer, buffer.position(), buffer.remaining(), WRITE_TIMEOUT_NS)
+        if (n < 0) {
+            val recoverable = n == -2
+            throw AudioSink.WriteException(n, configuredFormat ?: Format.Builder().build(), recoverable)
+        }
+        if (outputFrameSize > 0) framesSubmitted += n / outputFrameSize
+        buffer.position(buffer.position() + n)
+        return !buffer.hasRemaining()
+    }
+
+    private fun encodingToOboeId(encoding: Int): Int = when (encoding) {
+        C.ENCODING_PCM_16BIT -> 0
+        C.ENCODING_PCM_24BIT -> 1
+        C.ENCODING_PCM_32BIT -> 2
+        C.ENCODING_PCM_FLOAT -> 3
+        else -> 0
     }
 
     private fun bytesPerSample(encoding: Int): Int = when (encoding) {
         C.ENCODING_PCM_16BIT -> 2
         C.ENCODING_PCM_24BIT -> 3
-        else -> 4
+        C.ENCODING_PCM_32BIT, C.ENCODING_PCM_FLOAT -> 4
+        else -> 2
     }
 
-    private fun ensureScratch(size: Int) {
-        if (scratch.size < size) scratch = FloatArray(size)
-    }
-
-    /** 从 buffer 取 frames 帧，转成 float 写入 scratch（含声道映射） */
-    private fun convertChunk(
-        buffer: ByteBuffer,
-        frames: Int,
-        encoding: Int,
-        inCh: Int,
-        outCh: Int,
-        map: IntArray?,
-    ) {
-        ensureScratch(frames * outCh)
-        val tmpIn = FloatArray(frames * inCh)
-        when (encoding) {
-            C.ENCODING_PCM_16BIT -> {
-                val sb = buffer.asShortBuffer()
-                for (i in 0 until frames * inCh) tmpIn[i] = sb.get() / 32768f
-                buffer.position(buffer.position() + frames * inCh * 2)
-            }
-            C.ENCODING_PCM_24BIT -> {
-                for (i in 0 until frames * inCh) {
-                    var v = (buffer.get().toInt() and 0xFF) or
-                        ((buffer.get().toInt() and 0xFF) shl 8) or
-                        ((buffer.get().toInt() and 0xFF) shl 16)
-                    if (v and 0x800000 != 0) v -= 1 shl 24
-                    tmpIn[i] = v.toFloat() / (1 shl 23)
-                }
-            }
-            C.ENCODING_PCM_32BIT -> {
-                val ib = buffer.asIntBuffer()
-                for (i in 0 until frames * inCh) tmpIn[i] = ib.get() / 2147483648f
-                buffer.position(buffer.position() + frames * inCh * 4)
-            }
-            else -> { // ENCODING_PCM_FLOAT
-                val fb = buffer.asFloatBuffer()
-                fb.get(tmpIn, 0, frames * inCh)
-                buffer.position(buffer.position() + frames * inCh * 4)
-            }
-        }
-        if (map == null && inCh == outCh) {
-            System.arraycopy(tmpIn, 0, scratch, 0, frames * outCh)
-        } else {
-            for (f in 0 until frames) {
-                for (o in 0 until outCh) {
-                    val s = if (map != null && o < map.size) map[o] else o
-                    scratch[f * outCh + o] = tmpIn[f * inCh + s.coerceIn(0, inCh - 1)]
-                }
-            }
-        }
+    companion object {
+        const val AUDIO_API_AUTO = 0
+        const val AUDIO_API_AAUDIO = 1
+        const val AUDIO_API_OPENSLES = 2
+        // Bound blocking writes so a stalled/disconnected device can't wedge the audio thread.
+        private const val WRITE_TIMEOUT_NS = 200_000_000L
+        private val EMPTY: ByteBuffer = ByteBuffer.allocateDirect(0).order(ByteOrder.nativeOrder())
     }
 }

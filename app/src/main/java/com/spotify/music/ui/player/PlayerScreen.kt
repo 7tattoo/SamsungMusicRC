@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -100,6 +101,7 @@ fun PlayerScreen(
     onOpenEqualizer: () -> Unit = {},
     onBrowseAlbum: (String) -> Unit,
     onBrowseArtist: (String) -> Unit,
+    showQueue: Boolean = false,
 ) {
     val song = uiState.currentSong
     var lyrics by remember(song?.path) { mutableStateOf(com.spotify.music.core.model.Lyrics.EMPTY) }
@@ -124,9 +126,9 @@ fun PlayerScreen(
         BoxWithConstraints(Modifier.fillMaxSize()) {
             val isLandscape = maxWidth > maxHeight
             if (isLandscape) {
-                LandscapePlayer(uiState, client, settings, library, song, lyrics, onBack, onOpenSettings, onOpenEqualizer, onBrowseAlbum, onBrowseArtist)
+                LandscapePlayer(uiState, client, settings, library, song, lyrics, onBack, onOpenSettings, onOpenEqualizer, onBrowseAlbum, onBrowseArtist, showQueue = uiState.showQueue)
             } else {
-                PortraitPlayer(uiState, client, settings, library, song, lyrics, onBack, onOpenSettings, onOpenEqualizer, onBrowseAlbum, onBrowseArtist)
+                PortraitPlayer(uiState, client, settings, library, song, lyrics, onBack, onOpenSettings, onOpenEqualizer, onBrowseAlbum, onBrowseArtist, showQueue = uiState.showQueue)
             }
         }
     }
@@ -147,20 +149,27 @@ private fun PortraitPlayer(
     onOpenEqualizer: () -> Unit,
     onBrowseAlbum: (String) -> Unit,
     onBrowseArtist: (String) -> Unit,
+    showQueue: Boolean = false,
 ) {
     var showLyrics by remember { mutableStateOf(false) }
 
     // 歌词页的系统返回/侧滑：回播放页（封面），而不是退出播放器
     androidx.activity.compose.BackHandler(enabled = showLyrics) { showLyrics = false }
 
+    com.spotify.music.ui.components.SwipeBackLayout(
+        enabled = true,
+        onBack = { if (showLyrics) showLyrics = false else onBack() },
+        edgeWidth = 32.dp,
+    ) {
     Column(
         Modifier
             .fillMaxSize()
             .statusBarsPadding()
+            .navigationBarsPadding()
             .padding(horizontal = 20.dp),
     ) {
         PlayerTopBar(
-            onBack = onBack,
+            onBack = { if (showLyrics) showLyrics = false else onBack() },
             onOpenSettings = onOpenSettings,
             onOpenEqualizer = onOpenEqualizer,
             onBrowseAlbum = onBrowseAlbum,
@@ -260,6 +269,7 @@ private fun PortraitPlayer(
 
         Spacer(Modifier.height(14.dp))
     }
+    }
 }
 
 // ─────────────────────────── 横屏布局（车机） ───────────────────────────
@@ -278,6 +288,7 @@ private fun LandscapePlayer(
     onOpenEqualizer: () -> Unit,
     onBrowseAlbum: (String) -> Unit,
     onBrowseArtist: (String) -> Unit,
+    showQueue: Boolean = false,
 ) {
     var showLyrics by remember { mutableStateOf(false) }
     var lyricScaleIdx by remember { mutableIntStateOf(0) }
@@ -286,14 +297,22 @@ private fun LandscapePlayer(
     // 歌词页的系统返回/侧滑：回播放页（封面），而不是退出播放器
     androidx.activity.compose.BackHandler(enabled = showLyrics) { showLyrics = false }
 
-    Column(
-        Modifier
-            .fillMaxSize()
-            .statusBarsPadding()
-            .padding(horizontal = 24.dp, vertical = 8.dp),
+    com.spotify.music.ui.components.SwipeBackLayout(
+        enabled = true,
+        onBack = { if (showLyrics) showLyrics = false else onBack() },
+        edgeWidth = 32.dp,
     ) {
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        val compact = maxHeight < 420.dp || maxWidth < 720.dp
+        Column(
+            Modifier
+                .fillMaxSize()
+                .statusBarsPadding()
+                .navigationBarsPadding()
+                .padding(horizontal = if (compact) 10.dp else 20.dp, vertical = 2.dp),
+        ) {
         PlayerTopBar(
-            onBack = onBack,
+            onBack = { if (showLyrics) showLyrics = false else onBack() },
             onOpenSettings = onOpenSettings,
             onOpenEqualizer = onOpenEqualizer,
             onBrowseAlbum = onBrowseAlbum,
@@ -303,11 +322,11 @@ private fun LandscapePlayer(
             library = library,
         )
 
-        Row(Modifier.fillMaxSize()) {
+        Row(Modifier.weight(1f).fillMaxWidth()) {
             // 左侧：封面 / 歌词（封面尺寸按可用高度自适应，避免车机低分辨率溢出）
             Box(
                 Modifier
-                    .weight(0.42f)
+                    .weight(if (compact) 0.54f else 0.42f)
                     .fillMaxHeight(),
                 contentAlignment = Alignment.Center,
             ) {
@@ -340,7 +359,7 @@ private fun LandscapePlayer(
                     AlbumArt(
                         path = song?.path,
                         modifier = Modifier
-                            .fillMaxHeight(0.62f)
+                            .fillMaxHeight(if (compact) 0.78f else 0.88f)
                             .aspectRatio(1f)
                             .shadow(14.dp, RoundedCornerShape(14.dp))
                             .clip(RoundedCornerShape(14.dp))
@@ -363,7 +382,7 @@ private fun LandscapePlayer(
                 }
             }
 
-            Spacer(Modifier.width(24.dp))
+            Spacer(Modifier.width(if (compact) 8.dp else 20.dp))
 
             // 右侧：标题 / 图标行 / 进度 / 控制（全部可压缩，保证不被裁掉）
             Column(
@@ -425,6 +444,8 @@ private fun LandscapePlayer(
                 Spacer(Modifier.height(6.dp))
             }
         }
+    }
+    }
     }
 }
 
@@ -636,7 +657,6 @@ private fun IconActionRow(
     song: Song?,
     tint: Color,
 ) {
-    var queueSheet by remember { mutableStateOf(false) }
     var addSheet by remember { mutableStateOf(false) }
     val isFavorite = song != null && settings.favorites.contains(song.path)
 
@@ -647,7 +667,7 @@ private fun IconActionRow(
     ) {
         PlaylistNoteIcon(
             tint = tint,
-            modifier = Modifier.clickable { queueSheet = true },
+            modifier = Modifier.clickable { uiState.showQueue = true },
         )
         Icon(
             if (isFavorite) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
@@ -666,12 +686,12 @@ private fun IconActionRow(
         )
     }
 
-    if (queueSheet) {
+    if (uiState.showQueue) {
         QueueSheet(
             uiState = uiState,
             client = client,
             library = library,
-            onDismiss = { queueSheet = false },
+            onDismiss = { uiState.showQueue = false },
         )
     }
     if (addSheet && song != null) {
@@ -784,7 +804,7 @@ private fun TransportControls(
 
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
-private fun QueueSheet(
+fun QueueSheet(
     uiState: PlayerUiState,
     client: PlaybackClient,
     library: LibraryRepository,

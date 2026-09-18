@@ -176,14 +176,17 @@ fun SettingsScreen(
             }
         }
 
-        // ── 音效 ──
+        // 音效与输出分别作为一级大类，和 Halcyon 的设置结构保持一致。
         SectionLabel("音效")
         SectionCard {
-            RowItem("均衡器", "10 段软件均衡器 · 低音增强 · 总增益", accent = true) {
+            RowItem("均衡器", "10 段软件均衡器 · 低音/高音 · 环绕 · 总增益", accent = true) {
                 onOpenEqualizer()
             }
-            Divider()
-            RowItem("输出", "输出设备与实时音频参数", accent = true) {
+        }
+
+        SectionLabel("输出")
+        SectionCard {
+            RowItem("输出通道", "输出设备、输出模式与实时音频参数", accent = true) {
                 onOpenOutput()
             }
         }

@@ -161,17 +161,30 @@ class SettingsRepository(context: Context) {
         get() = prefs.getFloat(KEY_EQ_WIDTH, 0f)
         set(value) = prefs.edit().putFloat(KEY_EQ_WIDTH, value).apply()
 
-    /** 输出位深："16"（默认）或 "float"（32bit float，部分设备支持，重启后生效） */
+    /** 系统 AudioTrack 输出格式：16-bit 或 float32；AAudio 原生后端固定接收 float PCM。 */
     var audioBitDepth: String
         get() = prefs.getString(KEY_AUDIO_BIT_DEPTH, "16") ?: "16"
         set(value) = prefs.edit().putString(KEY_AUDIO_BIT_DEPTH, value).apply()
 
-    /** 输出模式："system"（AudioTrack+软件EQ）或 "native"（AAudio 原生链，独占优先；重启生效） */
+    /** 系统输出目标采样率（Hz），0 表示跟随音源。 */
+    var audioSampleRate: Int
+        get() = prefs.getInt(KEY_AUDIO_SAMPLE_RATE, 0)
+        set(value) = prefs.edit().putInt(KEY_AUDIO_SAMPLE_RATE, value.coerceAtLeast(0)).apply()
+
+    /** 输出后端：system / aaudio / opensles（均通过 Halcyon Oboe sink）。 */
     var audioOutputMode: String
-        get() = prefs.getString(KEY_AUDIO_OUTPUT_MODE, "system") ?: "system"
+        get() {
+            val value = prefs.getString(KEY_AUDIO_OUTPUT_MODE, "system") ?: "system"
+            return if (value == "native") "aaudio" else value
+        }
         set(value) = prefs.edit().putString(KEY_AUDIO_OUTPUT_MODE, value).apply()
 
-    /** 输出通道：AAudio 设备 id（AudioDeviceInfo.getId()），-1 = 自动跟随系统 */
+    /** Oboe 独占模式；通常只建议 USB DAC 使用。 */
+    var usbExclusive: Boolean
+        get() = prefs.getBoolean(KEY_USB_EXCLUSIVE, false)
+        set(value) = prefs.edit().putBoolean(KEY_USB_EXCLUSIVE, value).apply()
+
+    /** 输出通道：Oboe 设备 id（AudioDeviceInfo.getId()），-1 = 自动跟随系统 */
     var audioOutputDeviceId: Int
         get() = prefs.getInt(KEY_AUDIO_OUTPUT_DEVICE, -1)
         set(value) = prefs.edit().putInt(KEY_AUDIO_OUTPUT_DEVICE, value).apply()
@@ -236,7 +249,9 @@ class SettingsRepository(context: Context) {
         private const val KEY_EQ_WIDTH = "eq_width"
         private const val KEY_EQ_BANDS = "eq_bands_json"
         private const val KEY_AUDIO_BIT_DEPTH = "audio_bit_depth"
+        private const val KEY_AUDIO_SAMPLE_RATE = "audio_sample_rate"
         private const val KEY_AUDIO_OUTPUT_MODE = "audio_output_mode"
+        private const val KEY_USB_EXCLUSIVE = "usb_exclusive"
         private const val KEY_AUDIO_OUTPUT_DEVICE = "audio_output_device"
 
         @Volatile

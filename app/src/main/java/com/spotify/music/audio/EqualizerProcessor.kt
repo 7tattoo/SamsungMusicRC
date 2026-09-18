@@ -35,7 +35,6 @@ object EqState {
 
     /** 参数版本号：任何修改后 +1，音频线程据此重算系数 */
     @Volatile var version: Int = 0
-
     fun touch() { version++ }
 
     fun setAll(enabled: Boolean, preamp: Float, bass: Float, treble: Float, width: Float, bands: FloatArray) {
@@ -61,6 +60,7 @@ object EqState {
     @Volatile var outSampleRate: Int = 0
     @Volatile var outChannelCount: Int = 0
     @Volatile var outEncoding: Int = 0
+    @Volatile var outDeviceId: Int = -1
 
     fun encodingLabel(): String = when (outEncoding) {
         C.ENCODING_PCM_16BIT -> "16 bit"
@@ -248,7 +248,7 @@ class EqualizerProcessor : BaseAudioProcessor() {
         val ob = out.asFloatBuffer()
         val n = fb.remaining()
         for (i in 0 until n) {
-            ob.put(softClip(widen(eqSample(fb.get(), i % channels), i % channels)))
+            ob.put(softClip(widen(eqSample(fb.get(), i % channels), i % channels) * masterGain))
         }
         input.position(input.position() + n * 4)
         // FloatBuffer 视图不推进 ByteBuffer 位置，需手动同步后再由调用方 flip

@@ -50,6 +50,7 @@ class PlaybackService : MediaLibraryService() {
     companion object {
         const val CMD_SLEEP_TIMER = "com.spotify.music.SLEEP_TIMER"
         const val CMD_APPLY_SETTINGS = "com.spotify.music.APPLY_SETTINGS"
+        const val CMD_REBUILD_OUTPUT = "com.spotify.music.REBUILD_OUTPUT"
         const val CMD_SKIP_SILENCE = "com.spotify.music.SKIP_SILENCE"
         const val CMD_ARG_MINUTES = "minutes"
         const val CMD_ARG_ENABLED = "enabled"
@@ -77,8 +78,6 @@ class PlaybackService : MediaLibraryService() {
     private var lyricsJob: Job? = null
     private var prefetchJob: Job? = null
     private var lastQueueSaveAt: Long = 0L
-    /** 原生输出模式下的 AAudio sink（系统模式为 null） */
-    private var nativeSink: com.spotify.music.audio.OboeAudioSink? = null
     /** 服务刚从磁盘恢复过队列（进程重启后）：等 App 前台连上时自动续播一次 */
     @Volatile private var pendingAutoResume = false
 
@@ -127,26 +126,52 @@ class PlaybackService : MediaLibraryService() {
     }
 
     private fun createPlayer(): ExoPlayer {
-        // 原生输出模式：AAudio 直驱（独占优先），EQ DSP 在原生回调里（nativeSetEq）
-        val useNativeSink = settings.audioOutputMode == "native"
+        val useNativeSink = settings.audioOutputMode == "aaudio" || settings.audioOutputMode == "opensles"
+        val nativeApi = if (settings.audioOutputMode == "opensles") {
+            com.spotify.music.audio.OboeAudioSink.AUDIO_API_OPENSLES
+        } else {
+            com.spotify.music.audio.OboeAudioSink.AUDIO_API_AAUDIO
+        }
         val eqProcessor = com.spotify.music.audio.EqualizerProcessor()
-        nativeSink = if (useNativeSink) {
-            com.spotify.music.audio.OboeAudioSink(
-                preferExclusive = true,
-                deviceId = settings.audioOutputDeviceId,
-            )
-        } else null
         val renderersFactory = object : androidx.media3.exoplayer.DefaultRenderersFactory(this) {
             override fun buildAudioSink(
                 context: android.content.Context,
                 enableFloatOutput: Boolean,
                 enableAudioTrackPlaybackParams: Boolean,
-            ): androidx.media3.exoplayer.audio.AudioSink =
-                nativeSink ?: androidx.media3.exoplayer.audio.DefaultAudioSink.Builder(context)
-                    .setAudioProcessors(arrayOf(eqProcessor))
+            ): androidx.media3.exoplayer.audio.AudioSink {
+                val sonic = androidx.media3.common.audio.SonicAudioProcessor().apply {
+                    setOutputSampleRateHz(
+                        settings.audioSampleRate.takeIf { it > 0 }
+                            ?: androidx.media3.common.audio.SonicAudioProcessor.SAMPLE_RATE_NO_CHANGE,
+                    )
+                }
+                val processors = arrayOf(
+                    eqProcessor,
+                    com.spotify.music.audio.OutputFormatProcessor(
+                        requestedBitDepth = "float",
+                        preferFloatWhenAutomatic = true,
+                    ),
+                    sonic,
+                    com.spotify.music.audio.OutputFormatProcessor(
+                        // AAudio endpoint is opened as PCM float; manual integer depth applies to AudioTrack.
+                        requestedBitDepth = if (useNativeSink) "float" else settings.audioBitDepth,
+                        preferFloatWhenAutomatic = enableFloatOutput,
+                    ),
+                )
+                if (useNativeSink) {
+                    return com.spotify.music.audio.OboeAudioSink(
+                        audioApi = nativeApi,
+                        exclusive = settings.usbExclusive,
+                        deviceId = settings.audioOutputDeviceId,
+                        processors = processors.toList(),
+                    )
+                }
+                return androidx.media3.exoplayer.audio.DefaultAudioSink.Builder(context)
+                    .setAudioProcessors(processors)
                     .setEnableFloatOutput(enableFloatOutput || settings.audioBitDepth == "float")
                     .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
                     .build()
+            }
         }
         return ExoPlayer.Builder(this, renderersFactory)
             .setAudioAttributes(
@@ -162,6 +187,30 @@ class PlaybackService : MediaLibraryService() {
             // 会在异常上报路径上出岔子，我们用自己的 CrashLogger 取证即可
             .setUsePlatformDiagnostics(false)
             .build()
+    }
+
+    /** Rebuild the renderer/sink while retaining the current queue, position, and play intent. */
+    private fun rebuildAudioOutput() {
+        val oldPlayer = player
+        val items = (0 until oldPlayer.mediaItemCount).map { oldPlayer.getMediaItemAt(it) }
+        val index = oldPlayer.currentMediaItemIndex.coerceAtLeast(0)
+        val position = oldPlayer.currentPosition.coerceAtLeast(0L)
+        val shouldPlay = oldPlayer.playWhenReady
+        runCatching { oldPlayer.removeListener(playerListener) }
+        crossfadeJob?.cancel()
+        val replacement = createPlayer()
+        player = replacement
+        replacement.addListener(playerListener)
+        session?.setPlayer(replacement)
+        oldPlayer.release()
+        applyPlaybackSettings()
+        restoreEq()
+        if (items.isNotEmpty()) {
+            replacement.setMediaItems(items, index.coerceIn(0, items.lastIndex), position)
+            replacement.prepare()
+            replacement.playWhenReady = shouldPlay
+        }
+        CrashLogger.trace("audio output rebuilt mode=${settings.audioOutputMode} rate=${settings.audioSampleRate} depth=${settings.audioBitDepth}")
     }
 
     private fun applyPlaybackSettings() {
@@ -219,7 +268,6 @@ class PlaybackService : MediaLibraryService() {
                 settings.eqWidth,
                 settings.getEqBands(),
             )
-            nativeSink?.pushEq()
         }.onFailure { CrashLogger.log(it, "restoreEq") }
     }
 
@@ -421,6 +469,7 @@ class PlaybackService : MediaLibraryService() {
                 .buildUpon()
                 .add(SessionCommand(CMD_SLEEP_TIMER, Bundle.EMPTY))
                 .add(SessionCommand(CMD_APPLY_SETTINGS, Bundle.EMPTY))
+                .add(SessionCommand(CMD_REBUILD_OUTPUT, Bundle.EMPTY))
                 .add(SessionCommand(CMD_SKIP_SILENCE, Bundle.EMPTY))
                 .add(SessionCommand(CMD_RESUME, Bundle.EMPTY))
                 .build()
@@ -460,6 +509,7 @@ class PlaybackService : MediaLibraryService() {
                         applyPlaybackSettings()
                         restoreEq()
                     }
+                    CMD_REBUILD_OUTPUT -> rebuildAudioOutput()
                     CMD_SKIP_SILENCE -> player.skipSilenceEnabled = args.getBoolean(CMD_ARG_ENABLED)
                     CMD_RESUME -> if (pendingAutoResume) {
                         pendingAutoResume = false

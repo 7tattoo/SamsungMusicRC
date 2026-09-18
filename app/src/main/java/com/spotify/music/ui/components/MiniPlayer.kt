@@ -51,49 +51,61 @@ fun MiniPlayer(
             .padding(horizontal = 10.dp, vertical = 6.dp)
             .clip(RoundedCornerShape(18.dp))
             .background(SamsungBlueDark)
-            .clickable { onOpenPlayer() }
             .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        AlbumArt(
-            path = songPath,
-            modifier = Modifier
-                .size(44.dp)
-                .clip(RoundedCornerShape(8.dp)),
-            placeholder = { m ->
-                Box(
-                    m.clip(RoundedCornerShape(8.dp)).background(Color(0xFF5C64B8)),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(Icons.Filled.MusicNote, contentDescription = null, tint = Color.White.copy(alpha = 0.7f))
-                }
-            },
-        )
-        Column(
+        Box(
             modifier = Modifier
                 .weight(1f)
-                .padding(start = 10.dp, end = 8.dp),
+                .clickable { onOpenPlayer() },
+            contentAlignment = Alignment.CenterStart,
         ) {
-            Text(
-                title,
-                color = Color.White,
-                fontSize = 14.sp,
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 1,
-                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-            )
-            Text(
-                artist,
-                color = Color.White.copy(alpha = 0.65f),
-                fontSize = 11.sp,
-                maxLines = 1,
-                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                AlbumArt(
+                    path = songPath,
+                    modifier = Modifier
+                        .size(44.dp)
+                        .clip(RoundedCornerShape(8.dp)),
+                    placeholder = { m ->
+                        Box(
+                            m.clip(RoundedCornerShape(8.dp)).background(Color(0xFF5C64B8)),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(Icons.Filled.MusicNote, contentDescription = null, tint = Color.White.copy(alpha = 0.7f))
+                        }
+                    },
+                )
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(start = 10.dp, end = 8.dp),
+                ) {
+                    Text(
+                        title,
+                        color = Color.White,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        artist,
+                        color = Color.White.copy(alpha = 0.65f),
+                        fontSize = 11.sp,
+                        maxLines = 1,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                    )
+                }
+            }
         }
         Row(
             horizontalArrangement = Arrangement.spacedBy(2.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            // 仅封面与标题区域可打开播放页；右侧控制按钮独立点击，避免队列图标被整条吞掉。
             Icon(
                 Icons.Filled.SkipPrevious,
                 contentDescription = "上一首",

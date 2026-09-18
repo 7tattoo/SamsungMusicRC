@@ -209,7 +209,7 @@ class MainActivity : androidx.activity.ComponentActivity() {
                         )
                     } else {
                         // 左边缘侧滑返回（所有子页面生效）
-                        SwipeBackLayout(enabled = true, onBack = goBack) {
+                        SwipeBackLayout(enabled = route != Route.PLAYER, onBack = goBack) {
                             when (route) {
                             Route.LIBRARY -> LibraryScreen(
                                 library = library,
@@ -253,10 +253,11 @@ class MainActivity : androidx.activity.ComponentActivity() {
                             )
                             Route.EQUALIZER -> EqualizerScreen(
                                 settings = settings,
-                                onBack = { route = Route.SETTINGS },
+                                onBack = { route = equalizerReturn },
                             )
                             Route.OUTPUT -> OutputScreen(
                                 onBack = { route = Route.SETTINGS },
+                                onOutputChanged = { client.rebuildAudioOutput() },
                             )
                             Route.SCAN_DIRS -> ScanDirsScreen(
                                 settings = settings,

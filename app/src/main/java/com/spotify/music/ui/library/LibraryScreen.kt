@@ -276,6 +276,15 @@ fun LibraryScreen(
             }
         }
     }
+
+    if (uiState.showQueue) {
+        com.spotify.music.ui.player.QueueSheet(
+            uiState = uiState,
+            client = client,
+            library = library,
+            onDismiss = { uiState.showQueue = false },
+        )
+    }
 }
 
 private fun filterBrowse(songs: List<Song>, browse: Pair<String, String>?): List<Song> {
@@ -304,7 +313,7 @@ private fun MiniPlayerBarInline(
         onToggle = { client.togglePlayPause() },
         onNext = { client.player?.seekToNextMediaItem() },
         onPrev = { client.player?.seekToPreviousMediaItem() },
-        onOpenQueue = {},
+        onOpenQueue = { uiState.showQueue = true },
         onOpenPlayer = onOpenPlayer,
     )
 }
