@@ -257,7 +257,9 @@ class MainActivity : androidx.activity.ComponentActivity() {
                             )
                             Route.OUTPUT -> OutputScreen(
                                 onBack = { route = Route.SETTINGS },
-                                onOutputChanged = { client.rebuildAudioOutput() },
+                                // Oboe/AudioTrack 后端不在运行中的 MediaSession 上热替换；
+                                // 保存设置，用户下次完整重启应用后由 PlaybackService 读取，避免车机进程被原生流重建杀掉。
+                                onOutputChanged = {},
                             )
                             Route.SCAN_DIRS -> ScanDirsScreen(
                                 settings = settings,

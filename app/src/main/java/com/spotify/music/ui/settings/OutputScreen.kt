@@ -2,6 +2,7 @@ package com.spotify.music.ui.settings
 
 import android.media.AudioDeviceInfo
 import android.media.AudioManager
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
@@ -41,11 +42,15 @@ import kotlinx.coroutines.delay
  * 输出信息页：显示实时音频输出链路（设备 / 采样率 / 位深 / 声道 / 软件音效链）。
  * 数据来自 AudioProcessor onConfigure 的实际 PCM 参数 + AudioManager 当前输出设备。
  *
- * 输出参数变更后会保留队列并重建播放内核；两种模式都使用 Media3 DSP/输出格式处理链。
+ * 输出参数变更后保存到设置；为避免车机原生音频流重建导致进程退出，需完整重启应用后生效。
  */
 @Composable
 fun OutputScreen(onBack: () -> Unit, onOutputChanged: () -> Unit = {}) {
     val context = LocalContext.current
+    fun changed() {
+        onOutputChanged()
+        Toast.makeText(context, "输出设置已保存，请完全重启应用后生效", Toast.LENGTH_SHORT).show()
+    }
     var tick by remember { mutableIntStateOf(0) }
     var showDepthDialog by remember { mutableStateOf(false) }
     val settings = remember {
@@ -164,7 +169,7 @@ fun OutputScreen(onBack: () -> Unit, onOutputChanged: () -> Unit = {}) {
                     onCheckedChange = {
                         usbExclusive = it
                         settings.usbExclusive = it
-                        onOutputChanged()
+                        changed()
                     },
                     colors = SwitchDefaults.colors(checkedTrackColor = Color(0xFF8A90DE)),
                 )
@@ -278,7 +283,7 @@ fun OutputScreen(onBack: () -> Unit, onOutputChanged: () -> Unit = {}) {
                             targetSampleRate = rate
                             settings.audioSampleRate = rate
                             showRateDialog = false
-                            onOutputChanged()
+                            changed()
                         }
                     }
                 }
@@ -300,7 +305,7 @@ fun OutputScreen(onBack: () -> Unit, onOutputChanged: () -> Unit = {}) {
                                     bitDepth = v
                                     settings.audioBitDepth = v
                                     showDepthDialog = false
-                                    onOutputChanged()
+                                    changed()
                                 }
                                 .padding(vertical = 12.dp),
                         ) {
@@ -329,14 +334,14 @@ fun OutputScreen(onBack: () -> Unit, onOutputChanged: () -> Unit = {}) {
                         outputDeviceId = -1
                         settings.audioOutputDeviceId = -1
                         showDeviceDialog = false
-                        onOutputChanged()
+                        changed()
                     }
                     devices.forEach { d ->
                         DeviceRow(deviceLabel(d), outputDeviceId == d.id) {
                             outputDeviceId = d.id
                             settings.audioOutputDeviceId = d.id
                             showDeviceDialog = false
-                            onOutputChanged()
+                            changed()
                         }
                     }
                 }
@@ -364,7 +369,7 @@ fun OutputScreen(onBack: () -> Unit, onOutputChanged: () -> Unit = {}) {
                                     outputMode = v
                                     settings.audioOutputMode = v
                                     showModeDialog = false
-                                    onOutputChanged()
+                                    changed()
                                 }
                                 .padding(vertical = 12.dp),
                         ) {
