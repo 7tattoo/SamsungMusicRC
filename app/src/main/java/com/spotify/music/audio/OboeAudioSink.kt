@@ -197,16 +197,16 @@ class OboeAudioSink(
     override fun flush() {
         pipeline.flush()
         pendingOutput = null
-        // Reopen the stream so getFramesRead() restarts from zero after a seek.
+        // 切歌/seek 不重开原生流。车机上的 AAudio/OpenSL 在高频 close/open
+        // 与 EQ pipeline flush 同时发生时容易让整个进程被 native 层杀掉。
+        // 保留同一个 Oboe stream，只清空设备缓冲并恢复原播放状态。
         val output = oboe
         if (output != null) {
-            output.close()
-            val reopened = OboeAudioOutput()
-            if (reopened.open(audioApi, outputSampleRate, outputChannelCount, oboeEncodingId, exclusive, deviceId)) {
-                oboe = reopened
-                if (!playing) reopened.pause()
-            } else {
-                oboe = null
+            runCatching {
+                output.flush()
+                if (playing) output.start() else output.pause()
+            }.onFailure {
+                com.spotify.music.util.CrashLogger.log(it, "OboeAudioSink.flush")
             }
         }
         resetPlaybackState()

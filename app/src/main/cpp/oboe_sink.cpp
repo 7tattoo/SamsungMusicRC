@@ -126,13 +126,19 @@ Java_com_spotify_music_audio_OboeAudioOutput_nativeGetSampleRate(JNIEnv*, jobjec
 JNIEXPORT void JNICALL
 Java_com_spotify_music_audio_OboeAudioOutput_nativePause(JNIEnv*, jobject, jlong handle) {
     auto* sink = reinterpret_cast<OboeSink*>(handle);
-    if (sink != nullptr && sink->stream) sink->stream->requestPause();
+    if (sink != nullptr && sink->stream) {
+        std::lock_guard<std::mutex> lock(sink->mutex);
+        sink->stream->requestPause();
+    }
 }
 
 JNIEXPORT void JNICALL
 Java_com_spotify_music_audio_OboeAudioOutput_nativeStart(JNIEnv*, jobject, jlong handle) {
     auto* sink = reinterpret_cast<OboeSink*>(handle);
-    if (sink != nullptr && sink->stream) sink->stream->requestStart();
+    if (sink != nullptr && sink->stream) {
+        std::lock_guard<std::mutex> lock(sink->mutex);
+        sink->stream->requestStart();
+    }
 }
 
 JNIEXPORT void JNICALL
