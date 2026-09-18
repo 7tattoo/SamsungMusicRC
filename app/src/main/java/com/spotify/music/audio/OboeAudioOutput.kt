@@ -66,8 +66,21 @@ class OboeAudioOutput {
             if (loaded) return true
             return synchronized(this) {
                 if (loaded) return@synchronized true
-                runCatching { System.loadLibrary("samsung_oboe") }
+                runCatching {
+                    System.loadLibrary("samsung_oboe")
+                    // liboboe.so / libc++_shared.so 由 PackageManager 依 NEEDED 自动装载，
+                    // 这里再显式 load 一次以便在日志里定位缺失的依赖。
+                    System.loadLibrary("oboe")
+                }
                     .onSuccess { loaded = true }
+                    .onFailure { t ->
+                        com.spotify.music.util.CrashLogger.log(
+                            t,
+                            "OboeAudioOutput ensureLoaded | " +
+                                "缺少 arm64 原生库 libsamsung_oboe.so / liboboe.so / libc++_shared.so，" +
+                                "Oboe 输出不可用；请确认 APK 已携带 jniLibs/arm64-v8a 完整依赖",
+                        )
+                    }
                     .isSuccess
             }
         }
