@@ -1,0 +1,19 @@
+pluginManagement {
+    repositories {
+        // 腾讯云 Maven 公共镜像（代理 Google Maven + Maven Central），本环境直连 mavenCentral 被代理拦截返回 404
+        maven { url 'https://mirrors.cloud.tencent.com/nexus/repository/maven-public/' }
+        gradlePluginPortal()
+        google()
+        mavenCentral()
+    }
+}
+dependencyResolutionManagement {
+    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+    repositories {
+        maven { url 'https://mirrors.cloud.tencent.com/nexus/repository/maven-public/' }
+        google()
+        mavenCentral()
+    }
+}
+rootProject.name = "SamsungMusic"
+include ':app'

@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- 允许分享任意本地音乐文件（用于「分享歌曲」功能） -->
+    <root-path name="music_files" path="." />
+</paths>
