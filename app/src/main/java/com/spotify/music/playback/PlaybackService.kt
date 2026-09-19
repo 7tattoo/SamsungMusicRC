@@ -165,9 +165,11 @@ class PlaybackService : MediaLibraryService() {
                         channelMixer,
                         eqProcessor,
                         nativeSonic,
+                        // EQ stays float internally, but the vivo AAudio/OpenSL endpoint
+                        // is kept at I16. Its OpenSL path frequently opens float silently.
                         com.spotify.music.audio.OutputFormatProcessor(
-                            requestedBitDepth = "float",
-                            preferFloatWhenAutomatic = true,
+                            requestedBitDepth = "16",
+                            preferFloatWhenAutomatic = false,
                         ),
                     )
                     return com.spotify.music.audio.OboeAudioSink(
@@ -184,12 +186,14 @@ class PlaybackService : MediaLibraryService() {
                             ?: androidx.media3.common.audio.SonicAudioProcessor.SAMPLE_RATE_NO_CHANGE,
                     )
                 }
+                // Normalize decoder PCM to float before EQ. This avoids making the EQ
+                // independently handle 16/24/32-bit source buffers on different tracks.
                 val processors = arrayOf(
-                    eqProcessor,
                     com.spotify.music.audio.OutputFormatProcessor(
                         requestedBitDepth = "float",
                         preferFloatWhenAutomatic = true,
                     ),
+                    eqProcessor,
                     sonic,
                     com.spotify.music.audio.OutputFormatProcessor(
                         requestedBitDepth = settings.audioBitDepth,
