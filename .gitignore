@@ -20,3 +20,7 @@ capture/
 # 本地沙箱构建产物/脚本（沙箱 NDK 是 x86_64 工具链，原生库用 zig 交叉编译）
 local_build_*.sh
 app/src/main/jniLibs/**/libsamsung_oboe.so
+
+# AGP extracts this from the androidx.graphics-path AAR at build time;
+# keep a local copy for sandbox builds but do not track it.
+app/src/main/jniLibs/**/libandroidx.graphics.path.so
