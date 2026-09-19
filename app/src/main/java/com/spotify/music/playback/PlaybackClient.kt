@@ -97,8 +97,13 @@ class PlaybackClient private constructor(private val context: Context) {
 
     fun togglePlayPause() {
         try {
-            val p = controller ?: return
-            if (p.isPlaying) p.pause() else p.play()
+            val c = controller ?: return
+            // Serialize the decision on the PlaybackService thread. This prevents a late
+            // cold-start CMD_RESUME from racing a MiniPlayer pause tap.
+            c.sendCustomCommand(
+                SessionCommand(PlaybackService.CMD_TOGGLE_PLAY_PAUSE, Bundle.EMPTY),
+                Bundle.EMPTY,
+            )
         } catch (t: Throwable) {
             CrashLogger.log(t, "togglePlayPause")
         }

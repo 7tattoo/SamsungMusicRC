@@ -52,6 +52,7 @@ class PlaybackService : MediaLibraryService() {
         const val CMD_APPLY_SETTINGS = "com.spotify.music.APPLY_SETTINGS"
         const val CMD_REBUILD_OUTPUT = "com.spotify.music.REBUILD_OUTPUT"
         const val CMD_SKIP_SILENCE = "com.spotify.music.SKIP_SILENCE"
+        const val CMD_TOGGLE_PLAY_PAUSE = "com.spotify.music.TOGGLE_PLAY_PAUSE"
         const val CMD_ARG_MINUTES = "minutes"
         const val CMD_ARG_ENABLED = "enabled"
 
@@ -543,6 +544,7 @@ class PlaybackService : MediaLibraryService() {
                 .add(SessionCommand(CMD_APPLY_SETTINGS, Bundle.EMPTY))
                 .add(SessionCommand(CMD_REBUILD_OUTPUT, Bundle.EMPTY))
                 .add(SessionCommand(CMD_SKIP_SILENCE, Bundle.EMPTY))
+                .add(SessionCommand(CMD_TOGGLE_PLAY_PAUSE, Bundle.EMPTY))
                 .add(SessionCommand(CMD_RESUME, Bundle.EMPTY))
                 .build()
             return ConnectionResult.AcceptedResultBuilder(session)
@@ -583,6 +585,20 @@ class PlaybackService : MediaLibraryService() {
                     }
                     CMD_REBUILD_OUTPUT -> rebuildAudioOutput()
                     CMD_SKIP_SILENCE -> player.skipSilenceEnabled = args.getBoolean(CMD_ARG_ENABLED)
+                    CMD_TOGGLE_PLAY_PAUSE -> {
+                        val intended = player.isPlaying || player.playWhenReady
+                        CrashLogger.trace("service mini toggle intended=$intended isPlaying=${player.isPlaying} playWhenReady=${player.playWhenReady}")
+                        if (intended) {
+                            // A real user pause cancels the cold-start resume intent, so a
+                            // late UI resume command cannot start playback again.
+                            pendingAutoResume = false
+                            player.playWhenReady = false
+                            player.pause()
+                        } else {
+                            player.playWhenReady = true
+                            player.play()
+                        }
+                    }
                     CMD_RESUME -> if (pendingAutoResume) {
                         pendingAutoResume = false
                         player.play()
