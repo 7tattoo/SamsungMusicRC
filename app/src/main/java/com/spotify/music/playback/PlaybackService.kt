@@ -204,15 +204,35 @@ class PlaybackService : MediaLibraryService() {
                             ?: androidx.media3.common.audio.SonicAudioProcessor.SAMPLE_RATE_NO_CHANGE,
                     )
                 }
-                // Normalize decoder PCM to float before EQ. This avoids making the EQ
-                // independently handle 16/24/32-bit source buffers on different tracks.
+                // Normalize every path to float + stereo before EQ. EQ then always sees
+                // a stable 2-channel float stream, regardless of source FLAC layout/depth.
+                val channelMixer = androidx.media3.common.audio.ChannelMixingAudioProcessor().apply {
+                    for (channels in 1..8) {
+                        val coefficients = FloatArray(channels * 2)
+                        if (channels == 1) {
+                            coefficients[0] = 0.7071f
+                            coefficients[1] = 0.7071f
+                        } else {
+                            coefficients[0] = 1f
+                            coefficients[3] = 1f
+                            for (input in 2 until channels) {
+                                coefficients[input * 2] = 0.5f
+                                coefficients[input * 2 + 1] = 0.5f
+                            }
+                        }
+                        putChannelMixingMatrix(
+                            androidx.media3.common.audio.ChannelMixingMatrix(channels, 2, coefficients),
+                        )
+                    }
+                }
                 val processors = arrayOf(
                     com.spotify.music.audio.OutputFormatProcessor(
                         requestedBitDepth = "float",
                         preferFloatWhenAutomatic = true,
                     ),
-                    eqProcessor,
+                    channelMixer,
                     sonic,
+                    eqProcessor,
                     com.spotify.music.audio.OutputFormatProcessor(
                         requestedBitDepth = settings.audioBitDepth,
                         preferFloatWhenAutomatic = enableFloatOutput,

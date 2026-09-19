@@ -108,6 +108,13 @@ class EqualizerProcessor : BaseAudioProcessor() {
         }
 
         inline fun process(x: Float, ch: Int): Float {
+            // A single unstable/non-finite sample must not poison the biquad state.
+            // Once DF2T state becomes NaN, every following sample becomes NaN and
+            // integer sinks turn it into zero, which sounds like an immediate mute.
+            if (!x.isFinite()) {
+                reset()
+                return 0f
+            }
             val y = b0 * x + when (ch) {
                 0 -> s1a
                 1 -> s1b
@@ -116,6 +123,12 @@ class EqualizerProcessor : BaseAudioProcessor() {
             }
             val s2new = b2 * x - a2 * y
             val s1new = b1 * x - a1 * y + s2new
+            if (!y.isFinite() || !s1new.isFinite() || !s2new.isFinite() ||
+                kotlin.math.abs(y) > 16f || kotlin.math.abs(s1new) > 16f || kotlin.math.abs(s2new) > 16f
+            ) {
+                reset()
+                return x.coerceIn(-1f, 1f)
+            }
             when (ch) {
                 0 -> { s1a = s1new; s2a = s2new }
                 1 -> { s1b = s1new; s2b = s2new }
