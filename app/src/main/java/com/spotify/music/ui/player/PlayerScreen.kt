@@ -85,6 +85,7 @@ import com.spotify.music.ui.theme.GradientTopFallback
 import com.spotify.music.ui.theme.LyricHighlight
 import com.spotify.music.ui.theme.OrangeDot
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 
 /**
@@ -110,7 +111,15 @@ fun PlayerScreen(
 
     LaunchedEffect(song?.path) {
         val p = song?.path ?: return@LaunchedEffect
-        lyrics = withContext(Dispatchers.IO) { LyricsLoader.load(p) }
+        var loaded = withContext(Dispatchers.IO) { LyricsLoader.load(p) }
+        // Mounted storage and service metadata can become available a moment after
+        // the player page. Retry empty reads instead of permanently showing no lyrics.
+        repeat(3) { attempt ->
+            if (loaded.lines.isNotEmpty()) return@repeat
+            delay(180L * (attempt + 1))
+            loaded = withContext(Dispatchers.IO) { LyricsLoader.load(p) }
+        }
+        lyrics = loaded
         val pair = withContext(Dispatchers.IO) { extractGradientColors(p) }
         gradientTop = pair.first
         gradientBottom = pair.second

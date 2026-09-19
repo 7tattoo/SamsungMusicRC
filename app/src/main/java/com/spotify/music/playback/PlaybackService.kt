@@ -154,6 +154,10 @@ class PlaybackService : MediaLibraryService() {
     }
 
     private fun createPlayer(): ExoPlayer {
+        // OpenSL ES 与 AAudio 都保留为真实可选后端：
+        // 2026-09-19 之前的版本曾把 OpenSL 选择静默路由到 AAudio，导致用户以为在比
+        // OpenSL 实际比的是 AAudio。诊断锚点（sink configured/stall trace）现在能直接
+        // 看到实际 api 与采样率，两个后端各走各的路径。
         val useNativeSink = settings.audioOutputMode == "aaudio" || settings.audioOutputMode == "opensles"
         val nativeApi = if (settings.audioOutputMode == "opensles") {
             com.spotify.music.audio.OboeAudioSink.AUDIO_API_OPENSLES
@@ -209,8 +213,11 @@ class PlaybackService : MediaLibraryService() {
                             preferFloatWhenAutomatic = true,
                         ),
                         channelMixer,
-                        eqProcessor,
+                        // Resample Hi-Res input before the software EQ. Running all EQ
+                        // sections at 96 kHz doubles the realtime workload and causes
+                        // AAudio/OpenSL underruns (electric noise / slow, stuttering audio).
                         nativeSonic,
+                        eqProcessor,
                         // EQ stays float internally, but the vivo AAudio/OpenSL endpoint
                         // is kept at I16. Its OpenSL path frequently opens float silently.
                         com.spotify.music.audio.OutputFormatProcessor(
@@ -506,6 +513,11 @@ class PlaybackService : MediaLibraryService() {
 
         val lrc = withContext(Dispatchers.IO) { LyricsLoader.loadWholeLrc(path) }
         CrashLogger.trace("loadAndInjectLyrics lrc=${lrc?.length ?: 0} chars")
+        if (lrc.isNullOrEmpty()) {
+            // 空歌词定位：旁路文件 / 内嵌标签到底有没有，直接写进 trace，
+            // 下次「暂无歌词」的两首歌一放就有结论，不用再猜。
+            CrashLogger.trace("loadAndInjectLyrics empty diag=${withContext(Dispatchers.IO) { LyricsLoader.diagnose(path) }}")
+        }
         // 曲目可能已再次切换
         if (player.currentMediaItemIndex != index) return
         val current = player.currentMediaItem ?: return

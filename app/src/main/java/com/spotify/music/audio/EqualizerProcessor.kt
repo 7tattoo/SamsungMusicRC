@@ -149,6 +149,27 @@ class EqualizerProcessor : BaseAudioProcessor() {
      * 欠载、表现为「部分音乐开均衡器后卡顿/破音」，所以只处理实际生效的段。
      */
     private var activeSections: Array<Section> = emptyArray()
+
+    /**
+     * 热路径原语数组（recompute 时从 activeSections 同步）：
+     * 系数 cf* + 每声道状态 st*。立体声/单声道快速循环直接跑这些数组，
+     * 零虚调用、零按样本方法分发 —— 在弱大核/小核 + ART 未完全 JIT 时，
+     * 旧版按样本虚调用 Section.process 是 Oboe 欠载（电流声/卡顿）的主因。
+     */
+    private var cfB0 = FloatArray(0)
+    private var cfB1 = FloatArray(0)
+    private var cfB2 = FloatArray(0)
+    private var cfA1 = FloatArray(0)
+    private var cfA2 = FloatArray(0)
+    private var stS1L = FloatArray(0)
+    private var stS2L = FloatArray(0)
+    private var stS1R = FloatArray(0)
+    private var stS2R = FloatArray(0)
+
+    /** 可复用的批量 I/O 缓冲（只增不缩，按回调块大小一次性分配，热循环零分配） */
+    private var inScratch = FloatArray(0)
+    private var outScratch = FloatArray(0)
+
     private var masterGain = 1f
     private var coeffVersion = -1
     private var coeffSampleRate = -1
@@ -265,13 +286,166 @@ class EqualizerProcessor : BaseAudioProcessor() {
         }
     }
 
+    /**
+     * float 热路径：批量拷贝进原语数组，系数/状态全走数组（零虚调用、零按样本方法
+     * 分发），再批量拷出。立体声/单声道是 Oboe/AudioTrack 管线的实际声道数；
+     * >2 声道走旧的按样本路径（Hi-Res 多声道罕见，不值得为它写展开代码）。
+     * 语义与旧版完全一致：12 段 DF2T + widen + masterGain + softClip + 状态爆炸保护。
+     */
     private fun processFloat(input: ByteBuffer, out: ByteBuffer, channels: Int) {
-        val fb = input.asFloatBuffer()
-        val ob = out.asFloatBuffer()
-        val n = fb.remaining()
-        for (i in 0 until n) {
-            ob.put(softClip(widen(eqSample(fb.get(), i % channels), i % channels) * masterGain))
+        val n = input.remaining() / 4
+        if (n == 0) return
+        if (inScratch.size < n) inScratch = FloatArray(n)
+        if (outScratch.size < n) outScratch = FloatArray(n)
+        input.asFloatBuffer().get(inScratch, 0, n)
+
+        val nS = cfB0.size
+        val mg = masterGain
+        // 与 widen() 旧语义一致：>1 的旧设置先夹到 1 再判活跃
+        val w = EqState.width.coerceIn(0f, 1f)
+        val useWiden = w > 0f && channels == 2
+        val dL = delayL
+        val dR = delayR
+
+        when {
+            channels == 1 -> {
+                val b0v = cfB0; val b1v = cfB1; val b2v = cfB2
+                val a1v = cfA1; val a2v = cfA2
+                val s1 = stS1L; val s2 = stS2L
+                val oArr = outScratch
+                for (i in 0 until n) {
+                    var x = inScratch[i]
+                    if (!x.isFinite()) {
+                        java.util.Arrays.fill(s1, 0f); java.util.Arrays.fill(s2, 0f)
+                        oArr[i] = 0f
+                        continue
+                    }
+                    var y = x
+                    for (k in 0 until nS) {
+                        val yy = b0v[k] * x + s1[k]
+                        val s2n = b2v[k] * x - a2v[k] * yy
+                        val s1n = b1v[k] * x - a1v[k] * yy + s2n
+                        if (!yy.isFinite() || !s1n.isFinite() || !s2n.isFinite() ||
+                            yy < -16f || yy > 16f || s1n < -16f || s1n > 16f || s2n < -16f || s2n > 16f
+                        ) {
+                            s1[k] = 0f; s2[k] = 0f
+                            y = x.coerceIn(-1f, 1f)
+                            x = y
+                        } else {
+                            s1[k] = s1n; s2[k] = s2n
+                            y = yy
+                            x = yy
+                        }
+                    }
+                    oArr[i] = softClip(y * mg)
+                }
+            }
+
+            channels == 2 -> {
+                val b0v = cfB0; val b1v = cfB1; val b2v = cfB2
+                val a1v = cfA1; val a2v = cfA2
+                val s1l = stS1L; val s2l = stS2L
+                val s1r = stS1R; val s2r = stS2R
+                val oArr = outScratch
+                var idx = delayIdx
+                var i = 0
+                while (i + 1 < n) {
+                    // 左声道
+                    var x = inScratch[i]
+                    if (x.isFinite()) {
+                        var y = x
+                        for (k in 0 until nS) {
+                            val yy = b0v[k] * x + s1l[k]
+                            val s2n = b2v[k] * x - a2v[k] * yy
+                            val s1n = b1v[k] * x - a1v[k] * yy + s2n
+                            if (!yy.isFinite() || !s1n.isFinite() || !s2n.isFinite() ||
+                                yy < -16f || yy > 16f || s1n < -16f || s1n > 16f || s2n < -16f || s2n > 16f
+                            ) {
+                                s1l[k] = 0f; s2l[k] = 0f
+                                y = x.coerceIn(-1f, 1f)
+                                x = y
+                            } else {
+                                s1l[k] = s1n; s2l[k] = s2n
+                                y = yy
+                                x = yy
+                            }
+                        }
+                        val yl = if (useWiden) y + w * (dR[idx] - dL[idx]) else y
+                        if (useWiden) dL[idx] = y
+                        oArr[i] = softClip(yl * mg)
+                    } else {
+                        java.util.Arrays.fill(s1l, 0f); java.util.Arrays.fill(s2l, 0f)
+                        if (useWiden) dL[idx] = 0f
+                        oArr[i] = 0f
+                    }
+                    // 右声道
+                    x = inScratch[i + 1]
+                    if (x.isFinite()) {
+                        var y = x
+                        for (k in 0 until nS) {
+                            val yy = b0v[k] * x + s1r[k]
+                            val s2n = b2v[k] * x - a2v[k] * yy
+                            val s1n = b1v[k] * x - a1v[k] * yy + s2n
+                            if (!yy.isFinite() || !s1n.isFinite() || !s2n.isFinite() ||
+                                yy < -16f || yy > 16f || s1n < -16f || s1n > 16f || s2n < -16f || s2n > 16f
+                            ) {
+                                s1r[k] = 0f; s2r[k] = 0f
+                                y = x.coerceIn(-1f, 1f)
+                                x = y
+                            } else {
+                                s1r[k] = s1n; s2r[k] = s2n
+                                y = yy
+                                x = yy
+                            }
+                        }
+                        val yr = if (useWiden) y + w * (dL[idx] - dR[idx]) else y
+                        if (useWiden) {
+                            dR[idx] = y
+                            idx = (idx + 1) % DELAY_SAMPLES
+                        }
+                        oArr[i + 1] = softClip(yr * mg)
+                    } else {
+                        java.util.Arrays.fill(s1r, 0f); java.util.Arrays.fill(s2r, 0f)
+                        if (useWiden) dR[idx] = 0f
+                        oArr[i + 1] = 0f
+                    }
+                    i += 2
+                }
+                // 尾部奇数样本（理论不会出现在立体声帧对齐数据里，防御处理）
+                if (i < n) {
+                    var x = inScratch[i]
+                    var y = x
+                    if (x.isFinite()) {
+                        for (k in 0 until nS) {
+                            val yy = b0v[k] * x + s1l[k]
+                            val s2n = b2v[k] * x - a2v[k] * yy
+                            val s1n = b1v[k] * x - a1v[k] * yy + s2n
+                            if (!yy.isFinite() || !s1n.isFinite() || !s2n.isFinite()) {
+                                s1l[k] = 0f; s2l[k] = 0f
+                                y = x.coerceIn(-1f, 1f)
+                            } else {
+                                s1l[k] = s1n; s2l[k] = s2n
+                                y = yy
+                            }
+                        }
+                    } else y = 0f
+                    oArr[i] = softClip(y * mg)
+                }
+                delayIdx = idx
+            }
+
+            else -> {
+                // 4/8 声道：按样本旧路径（widen 只认立体声，内部自然退化）
+                val oArr = outScratch
+                for (i in 0 until n) {
+                    val s = inScratch[i]
+                    val y = widen(eqSample(s, i % channels), i % channels)
+                    oArr[i] = softClip(y * mg)
+                }
+            }
         }
+
+        out.asFloatBuffer().put(outScratch, 0, n)
         input.position(input.position() + n * 4)
         // FloatBuffer 视图不推进 ByteBuffer 位置，需手动同步后再由调用方 flip
         out.position(out.position() + n * 4)
@@ -310,6 +484,18 @@ class EqualizerProcessor : BaseAudioProcessor() {
 
         // 只保留真正生效的段进实时循环；恒等段是纯直通，跳过结果不变。
         activeSections = sections.filter { sec -> !sec.isIdentity() }.toTypedArray()
+
+        // 同步热路径原语数组（系数 + 零状态；每次重算都清零，与旧版 s.reset() 语义一致）
+        val n = activeSections.size
+        cfB0 = FloatArray(n); cfB1 = FloatArray(n); cfB2 = FloatArray(n)
+        cfA1 = FloatArray(n); cfA2 = FloatArray(n)
+        stS1L = FloatArray(n); stS2L = FloatArray(n)
+        stS1R = FloatArray(n); stS2R = FloatArray(n)
+        for (i in 0 until n) {
+            val s = activeSections[i]
+            cfB0[i] = s.b0; cfB1[i] = s.b1; cfB2[i] = s.b2
+            cfA1[i] = s.a1; cfA2[i] = s.a2
+        }
     }
 
     private fun identity(s: Section) {
@@ -380,11 +566,15 @@ class EqualizerProcessor : BaseAudioProcessor() {
 
     override fun onFlush() {
         sections.forEach { it.reset() }
+        java.util.Arrays.fill(stS1L, 0f); java.util.Arrays.fill(stS2L, 0f)
+        java.util.Arrays.fill(stS1R, 0f); java.util.Arrays.fill(stS2R, 0f)
         resetWiden()
     }
 
     override fun onReset() {
         sections.forEach { it.reset() }
+        java.util.Arrays.fill(stS1L, 0f); java.util.Arrays.fill(stS2L, 0f)
+        java.util.Arrays.fill(stS1R, 0f); java.util.Arrays.fill(stS2R, 0f)
         resetWiden()
         coeffVersion = -1
         coeffSampleRate = -1

@@ -23,17 +23,25 @@ object LyricsLoader {
 
     @Synchronized
     fun load(audioPath: String): Lyrics {
-        cache[audioPath]?.let { return it }
+        // Do not permanently cache EMPTY: the player page can race the service's
+        // first metadata read while a mounted file is becoming available. The car
+        // bridge may then have lyrics while the player page is stuck with the old
+        // empty result.
+        cache[audioPath]?.let { cached ->
+            if (cached.lines.isNotEmpty()) return cached
+            cache.remove(audioPath)
+        }
         val lyrics = doLoad(audioPath)
-        cache[audioPath] = lyrics
+        if (lyrics.lines.isNotEmpty()) cache[audioPath] = lyrics
         return lyrics
     }
 
     @Synchronized
     fun loadWholeLrc(audioPath: String): String? {
         wholeTextCache[audioPath]?.let { return it.ifEmpty { null } }
-        val text = readRaw(audioPath)?.trim()
-        wholeTextCache[audioPath] = text ?: ""
+        val text = readRaw(audioPath)?.trim()?.takeIf { it.isNotEmpty() }
+        // As with parsed lyrics, don't freeze a transient read failure into the cache.
+        if (text != null) wholeTextCache[audioPath] = text
         return text
     }
 
@@ -43,21 +51,63 @@ object LyricsLoader {
         wholeTextCache.remove(audioPath)
     }
 
+    /**
+     * 空歌词定位诊断（一次性探测，只进 trace 不进缓存）：
+     * 旁路文件（.lrc/.txt）存在性与大小 + 内嵌歌词探测结论。
+     */
+    @Synchronized
+    fun diagnose(audioPath: String): String {
+        val f = File(audioPath)
+        if (!f.exists()) return "file-missing"
+        val base = f.nameWithoutExtension
+        val sidecars = f.parentFile?.takeIf { it.isDirectory }
+            ?.listFiles { _, name ->
+                name.equals("$base.lrc", true) || name.equals("$base.txt", true)
+            }
+            ?.map { "${it.name}:${it.length()}" }
+            ?.toString()
+            ?: "[]"
+        val embedded = runCatching { EmbeddedLyricsReader.describe(audioPath) }
+            .getOrDefault("embed-probe-error")
+        return "sidecar=$sidecars embedded=$embedded"
+    }
+
+    /**
+     * 歌词旁路文件的解码：优先识别 BOM（UTF-8 / UTF-16LE / UTF-16BE，
+     * Windows 记事本存 .lrc 常见 UTF-16），无 BOM 时按 UTF-8 读、出现替换符
+     * 再退回 ISO-8859-1（旧 GBK/latin 文件至少不产生乱码块）。
+     */
+    private fun readTextSmart(file: File): String? {
+        val bytes = runCatching { file.readBytes() }.getOrNull() ?: return null
+        val n = bytes.size
+        if (n >= 2) {
+            when {
+                bytes[0].toInt() == 0xFF && bytes[1].toInt() == 0xFE ->
+                    return String(bytes, 2, n - 2, Charsets.UTF_16LE)
+                bytes[0].toInt() == 0xFE && bytes[1].toInt() == 0xFF ->
+                    return String(bytes, 2, n - 2, Charsets.UTF_16BE)
+            }
+        }
+        var text = String(bytes, Charsets.UTF_8)
+        if ('\uFFFD' in text) text = String(bytes, Charsets.ISO_8859_1)
+        return text
+    }
+
     private fun readRaw(audioPath: String): String? {
         val f = File(audioPath)
         if (!f.exists()) return null
-        // 1. 同目录同名 .lrc
+        // 1. 同目录同名 .lrc（优先）/ .txt（纯歌词文本兜底，解析为无时间戳静态歌词）
         val base = f.nameWithoutExtension
         val dir = f.parentFile
         if (dir != null && dir.isDirectory) {
             val candidates = dir.listFiles { _, name ->
-                name.equals("$base.lrc", true)
+                name.equals("$base.lrc", true) || name.equals("$base.txt", true)
             }
             if (candidates != null) {
-                val lrcFile = candidates.firstOrNull()
-                if (lrcFile != null) {
-                    val text = runCatching { lrcFile.readText(Charsets.UTF_8) }.getOrNull()
-                        ?: runCatching { lrcFile.readText(Charsets.ISO_8859_1) }.getOrNull()
+                val sidecar = candidates.firstOrNull { it.name.equals("$base.lrc", true) }
+                    ?: candidates.firstOrNull { it.name.equals("$base.txt", true) }
+                if (sidecar != null) {
+                    val text = readTextSmart(sidecar)
                     if (!text.isNullOrBlank()) return text
                 }
             }

@@ -7,7 +7,14 @@ import androidx.media3.common.util.UnstableApi
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
-/** Converts PCM encoding; sample-rate conversion is delegated to Media3 SonicAudioProcessor. */
+/**
+ * Converts PCM encoding; sample-rate conversion is delegated to Media3 SonicAudioProcessor.
+ *
+ * 热路径（float↔I16，即 Oboe 管线两端的标准转换）用批量数组搬移 + 整段算术循环实现：
+ * 旧的按样本 read()/writeSample() 双循环在每样本上重复 when 分发与方法调用，
+ * 在 96kHz 音源 + 弱核 + ART 未完全 JIT 时会成为实时瓶颈，与 EQ 叠加后直接欠载
+ * （电流声/卡顿/变速）。
+ */
 @UnstableApi
 class OutputFormatProcessor(
     private val requestedBitDepth: String,
@@ -15,6 +22,12 @@ class OutputFormatProcessor(
 ) : BaseAudioProcessor() {
     private var source = AudioProcessor.AudioFormat.NOT_SET
     private var target = AudioProcessor.AudioFormat.NOT_SET
+
+    /** 可复用的批量转换缓冲（只增不缩，一次性分配，热循环零分配） */
+    private var inFloat = FloatArray(0)
+    private var outFloat = FloatArray(0)
+    private var inShort = ShortArray(0)
+    private var outShort = ShortArray(0)
 
     override fun onConfigure(inputAudioFormat: AudioProcessor.AudioFormat): AudioProcessor.AudioFormat {
         if (inputAudioFormat.encoding !in SUPPORTED) {
@@ -37,21 +50,60 @@ class OutputFormatProcessor(
     override fun queueInput(inputBuffer: ByteBuffer) {
         val inFormat = source
         val outFormat = target
+        if (inFormat == AudioProcessor.AudioFormat.NOT_SET || outFormat == AudioProcessor.AudioFormat.NOT_SET) return
         val inputBytes = bytesPerSample(inFormat.encoding)
         val outputBytes = bytesPerSample(outFormat.encoding)
-        if (inFormat == AudioProcessor.AudioFormat.NOT_SET || outFormat == AudioProcessor.AudioFormat.NOT_SET || inputBytes == 0) return
+        if (inputBytes == 0 || outputBytes == 0) return
+
         inputBuffer.order(ByteOrder.LITTLE_ENDIAN)
         val frames = inputBuffer.remaining() / (inputBytes * inFormat.channelCount)
         if (frames == 0) { inputBuffer.position(inputBuffer.limit()); return }
-        val start = inputBuffer.position()
+
         val out = replaceOutputBuffer(frames * outFormat.channelCount * outputBytes).order(ByteOrder.LITTLE_ENDIAN)
-        for (frame in 0 until frames) {
-            for (channel in 0 until inFormat.channelCount) {
-                val sample = read(inputBuffer, start, frame, channel, inFormat, inputBytes).coerceIn(-1f, 1f)
-                writeSample(out, sample, outFormat.encoding)
+        val inEnc = inFormat.encoding
+        val outEnc = outFormat.encoding
+
+        when {
+            // ── 快速路径：float → I16（Oboe 管线末端）──
+            inEnc == C.ENCODING_PCM_FLOAT && outEnc == C.ENCODING_PCM_16BIT -> {
+                val n = frames * inFormat.channelCount
+                if (inFloat.size < n) { inFloat = FloatArray(n); outShort = ShortArray(n) }
+                inputBuffer.asFloatBuffer().get(inFloat, 0, n)
+                for (i in 0 until n) {
+                    outShort[i] = (inFloat[i] * 32767f).toInt().coerceIn(-32768, 32767).toShort()
+                }
+                out.asShortBuffer().put(outShort, 0, n)
+                out.position(frames * outFormat.channelCount * outputBytes)
+            }
+
+            // ── 快速路径：I16 → float（Oboe 管线首端）──
+            inEnc == C.ENCODING_PCM_16BIT && outEnc == C.ENCODING_PCM_FLOAT -> {
+                val n = frames * inFormat.channelCount
+                if (inShort.size < n) { inShort = ShortArray(n); outFloat = FloatArray(n) }
+                inputBuffer.asShortBuffer().get(inShort, 0, n)
+                for (i in 0 until n) {
+                    outFloat[i] = inShort[i].toInt() / 32768f
+                }
+                out.asFloatBuffer().put(outFloat, 0, n)
+                out.position(frames * outFormat.channelCount * outputBytes)
+            }
+
+            // float→float 或同格式：onConfigure 已返回 NOT_SET，不会进来
+            else -> {
+                // 24/32-bit 等少见格式：保持旧的按帧按声道循环（绝对偏移读法）。
+                // 注意：这里 by puts 自然推进 out.position，不能在 limit 上手动定位
+                //（输入/输出字节数可能不同，如 float→I24）。
+                val inCh = inFormat.channelCount
+                val start = inputBuffer.position()
+                for (frame in 0 until frames) {
+                    for (channel in 0 until inCh) {
+                        val sample = read(inputBuffer, start, frame, channel, inFormat, inputBytes).coerceIn(-1f, 1f)
+                        writeSample(out, sample, outEnc)
+                    }
+                }
+                inputBuffer.position(inputBuffer.limit())
             }
         }
-        inputBuffer.position(inputBuffer.limit())
         out.flip()
     }
 
@@ -65,9 +117,9 @@ class OutputFormatProcessor(
         return when (format.encoding) {
             C.ENCODING_PCM_16BIT -> buffer.getShort(offset) / 32768f
             C.ENCODING_PCM_24BIT -> {
-                var value = (buffer.get(offset).toInt() and 0xff) or
-                    ((buffer.get(offset + 1).toInt() and 0xff) shl 8) or
-                    ((buffer.get(offset + 2).toInt() and 0xff) shl 16)
+                var value = (buffer.get(offset).toInt() and 0xFF) or
+                    ((buffer.get(offset + 1).toInt() and 0xFF) shl 8) or
+                    ((buffer.get(offset + 2).toInt() and 0xFF) shl 16)
                 if (value and 0x800000 != 0) value -= 1 shl 24
                 value / 8388608f
             }
@@ -82,9 +134,9 @@ class OutputFormatProcessor(
             C.ENCODING_PCM_16BIT -> buffer.putShort((sample * 32767f).toInt().coerceIn(-32768, 32767).toShort())
             C.ENCODING_PCM_24BIT -> {
                 val value = (sample * 8388607f).toInt().coerceIn(-8388608, 8388607)
-                buffer.put((value and 0xff).toByte())
-                buffer.put(((value shr 8) and 0xff).toByte())
-                buffer.put(((value shr 16) and 0xff).toByte())
+                buffer.put((value and 0xFF).toByte())
+                buffer.put(((value shr 8) and 0xFF).toByte())
+                buffer.put(((value shr 16) and 0xFF).toByte())
             }
             C.ENCODING_PCM_32BIT -> buffer.putInt((sample * 2147483647.0).toLong().coerceIn(Int.MIN_VALUE.toLong(), Int.MAX_VALUE.toLong()).toInt())
             C.ENCODING_PCM_FLOAT -> buffer.putFloat(sample)

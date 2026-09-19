@@ -143,6 +143,11 @@ class OboeAudioSink(
         }
         actualSampleRate = oboe?.outputSampleRate() ?: newSampleRate
         resetPlaybackState()
+        // 诊断锚点：实际流参数（采样率/声道/格式/缓冲）与请求值不一致是变速/欠载的第一嫌疑
+        CrashLogger.trace(
+            "sink configured api=$audioApi reuse=$canReuse reqRate=$newSampleRate actualRate=$actualSampleRate " +
+                "enc=$newOboeEncodingId ch=$newChannelCount exclusive=$exclusive device=$deviceId"
+        )
     }
 
     override fun play() {
@@ -373,12 +378,22 @@ class OboeAudioSink(
             throw AudioSink.WriteException(n, configuredFormat ?: Format.Builder().build(), true)
         }
         if (n < 0 || (n == 0 && buffer.remaining() >= outputFrameSize)) {
+            val stall = ++stallCount
             // 写超时 / 缓冲满：瞬态，让上层重试。连续多拍无进展则重开流防楔死。
-            if (++stallCount >= MAX_CONSECUTIVE_STALLS) {
+            if (stall >= MAX_CONSECUTIVE_STALLS) {
                 stallCount = 0
                 if (!reopenStream()) {
                     throw AudioSink.WriteException(n, configuredFormat ?: Format.Builder().build(), false)
                 }
+            }
+            // 限频诊断：欠载时刻的积压帧数 + 请求/实际采样率。
+            // gap 持续增长 = 设备消费慢于喂入（时钟失配/固件重采样）；忽大忽小 = 喂入线程瞬停（GC/调度）。
+            if (stall <= 3 || stall % 10 == 1) {
+                val pending = framesSubmitted - ((output.framesRead() - frameBase).coerceAtLeast(0L))
+                CrashLogger.trace(
+                    "sink stall result=$n pendingFrames=$pending reqRate=$outputSampleRate " +
+                        "actualRate=$actualSampleRate api=$audioApi stall=$stall"
+                )
             }
             return false
         }
@@ -414,6 +429,9 @@ class OboeAudioSink(
                 actualSampleRate = output.outputSampleRate()
                 frameBase = 0L
                 stallCount = 0
+                CrashLogger.trace(
+                    "sink reopened ok rate=$outputSampleRate actualRate=$actualSampleRate api=$audioApi"
+                )
                 true
             }
         } catch (t: Throwable) {

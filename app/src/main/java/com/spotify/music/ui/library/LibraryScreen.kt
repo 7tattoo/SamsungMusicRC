@@ -473,7 +473,8 @@ fun SongRow(
                 com.spotify.music.util.CrashLogger.trace("CLICK song playQueue returned")
                 onOpenPlayer?.invoke()
             }
-            .padding(horizontal = 14.dp, vertical = 8.dp),
+            // Keep the MoreVert target away from the right-side A-Z rail.
+            .padding(start = 14.dp, end = 46.dp, top = 8.dp, bottom = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         AlbumArt(

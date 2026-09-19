@@ -31,6 +31,80 @@ object EmbeddedLyricsReader {
         null
     }
 
+    /**
+     * 只读探测：容器类型 + 歌词字段是否/多少存在。仅用于 trace 诊断，
+     * 不返回歌词内容，也不做整盘扫描（MP4 走 ftyp 预检 + moov 单次定位）。
+     */
+    fun describe(path: String): String = try {
+        RandomAccessFile(path, "r").use { raf ->
+            val head = ByteArray(12)
+            if (raf.read(head) < 4) return "unreadable"
+            when {
+                head[0] == 'I'.code.toByte() && head[1] == 'D'.code.toByte() &&
+                    head[2] == '3'.code.toByte() -> {
+                    val text = readId3(raf)
+                    "id3v2:" + if (text != null) "uslt-${text.length}chars" else "no-uslt"
+                }
+                head.contentEquals("fLaC".toByteArray()) -> flacDescribe(raf)
+                head[4].toInt() == 'f'.code && head[5].toInt() == 't'.code &&
+                    head[6].toInt() == 'y'.code && head[7].toInt() == 'p'.code -> {
+                    val text = readM4a(raf)
+                    "m4a:" + if (text != null) "lyr-${text.length}chars" else "no-lyr"
+                }
+                else -> "unknown-container"
+            }
+        }
+    } catch (t: Throwable) {
+        "probe-error:${t.javaClass.simpleName}"
+    }
+
+    /** FLAC：列出 Vorbis comment 里所有键（+歌词键的长度），用于判断歌词存在但键名不匹配 */
+    private fun flacDescribe(raf: RandomAccessFile): String {
+        raf.seek(4)
+        while (true) {
+            val h = ByteArray(4)
+            if (raf.read(h) < 4) return "flac:short"
+            val isLast = (h[0].toInt() and 0x80) != 0
+            val type = h[0].toInt() and 0x7F
+            val len = ((h[1].toInt() and 0xFF) shl 16) or ((h[2].toInt() and 0xFF) shl 8) or (h[3].toInt() and 0xFF)
+            if (len < 0 || len > 32 * 1024 * 1024) return "flac:bad-len"
+            if (type == 4) {
+                val b = ByteArray(len)
+                runCatching { raf.readFully(b) }.getOrElse { return "flac:read-fail" }
+                val keys = vorbisCommentKeys(b)
+                return "flac-vorbis:${keys.keys}"
+            }
+            if (isLast) return "flac:no-vorbis"
+            raf.seek(raf.filePointer + len)
+        }
+    }
+
+    /** 解析 Vorbis comment，只提取键名（歌词键附长度） */
+    private fun vorbisCommentKeys(b: ByteArray): Map<String, Int> {
+        val result = LinkedHashMap<String, Int>()
+        var pos = 0
+        if (pos + 4 > b.size) return result
+        val vendorLen = u32le(b, pos); pos += 4
+        pos += vendorLen
+        if (pos + 4 > b.size) return result
+        val count = u32le(b, pos); pos += 4
+        repeat(count) {
+            if (pos + 4 > b.size) return@repeat
+            val l = u32le(b, pos); pos += 4
+            if (pos + l > b.size) return@repeat
+            val comment = String(b, pos, l, Charsets.UTF_8)
+            pos += l
+            val eq = comment.indexOf('=')
+            val key = (if (eq > 0) comment.substring(0, eq) else comment).uppercase()
+            result[key] = if (eq > 0) l else 0
+        }
+        return result
+    }
+
+    private fun u32le(b: ByteArray, off: Int): Int =
+        (b[off].toInt() and 0xFF) or ((b[off + 1].toInt() and 0xFF) shl 8) or
+            ((b[off + 2].toInt() and 0xFF) shl 16) or ((b[off + 3].toInt() and 0xFF) shl 24)
+
     // ─────────────────────────── ID3v2 (MP3) ───────────────────────────
 
     private fun readId3(raf: RandomAccessFile): String? {
@@ -141,7 +215,9 @@ object EmbeddedLyricsReader {
             if (len < 0 || len > 32 * 1024 * 1024) return null
             if (type == 4) { // VORBIS_COMMENT
                 val b = ByteArray(len)
-                if (raf.read(b) != len) return null
+                // RandomAccessFile.read(byte[]) may legally return a short read.
+                // Large FLAC comment blocks then looked like "no lyrics" intermittently.
+                runCatching { raf.readFully(b) }.getOrElse { return null }
                 return parseVorbisComment(b)
             }
             if (isLast) return null
@@ -171,7 +247,11 @@ object EmbeddedLyricsReader {
             val eq = comment.indexOf('=')
             if (eq > 0) {
                 val key = comment.substring(0, eq).uppercase()
-                if (key == "LYRICS" || key == "UNSYNCEDLYRICS" || key == "LYRIC") {
+                // 不同工具写 FLAC 歌词用的键名不一：FLAC 标准约定 LYRICS（无时间戳），
+                // LRC/SYNCEDLYRICS/SYNC_LYRICS 是各写标签工具（foobar、XLD、Kugou 等）的自定义键
+                if (key == "LYRICS" || key == "UNSYNCEDLYRICS" || key == "LYRIC" ||
+                    key == "SYNCEDLYRICS" || key == "LRC" || key == "SYNC_LYRICS"
+                ) {
                     return comment.substring(eq + 1)
                 }
             }

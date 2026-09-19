@@ -17,12 +17,15 @@ object LrcParser {
     private val WORD_TIME_REGEX = Regex("""<\d{1,3}:\d{1,2}(?:[.:]\d{1,3})?>""")
 
     fun parse(raw: String): Lyrics {
-        if (raw.isBlank()) return Lyrics.EMPTY
+        // Embedded Vorbis comments and UTF-8 sidecar files may start with a BOM.
+        // Keep it out of the first timestamp token so the first line is not lost.
+        val normalizedRaw = raw.removePrefix("\uFEFF").replace("\r\n", "\n").replace('\r', '\n')
+        if (normalizedRaw.isBlank()) return Lyrics.EMPTY
         var offsetMs = 0L
         val out = ArrayList<LyricLine>(64)
         var hasTimestamps = false
 
-        raw.lineSequence().forEach { line0 ->
+        normalizedRaw.lineSequence().forEach { line0 ->
             val line = line0.trim()
             if (line.isEmpty()) return@forEach
 
