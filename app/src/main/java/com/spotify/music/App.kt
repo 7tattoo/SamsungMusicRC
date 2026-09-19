@@ -16,6 +16,17 @@ class App : Application() {
         // 崩溃日志必须最先装好，否则后续任何初始化崩溃都抓不到
         CrashLogger.install(this)
         CrashLogger.trace("App.onCreate pid=${android.os.Process.myPid()}")
+        // 上一次进程是怎么死的：闪退 / 被系统回收后自动重启会走「恢复队列 + 续播」，
+        // 这是「点暂停后又自动开声」的主要嫌疑，必须在启动时就留下证据
+        runCatching {
+            CrashLogger.pendingCrash(this)?.let {
+                CrashLogger.trace("PREV CRASH: " + it.take(800).replace("\n", " | "))
+                CrashLogger.clearPending(this)
+            }
+            CrashLogger.captureExitReasons(this)?.let {
+                CrashLogger.trace("PREV EXIT: " + it.lineSequence().take(14).joinToString(" | "))
+            }
+        }.onFailure { CrashLogger.log(it, "startup exit reasons") }
         // 预热读取（触发 SharedPreferences 与 DB 的早期初始化，避免首扫时发生冷启动抖动）
         // 任何一项失败都不能让 App 起不来
         runCatching { SettingsRepository.get(this) }

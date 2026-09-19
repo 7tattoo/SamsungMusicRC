@@ -12,6 +12,7 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.common.util.Util
 import androidx.media3.exoplayer.audio.AudioSink
 import com.google.common.collect.ImmutableList
+import com.spotify.music.util.CrashLogger
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
@@ -53,6 +54,11 @@ class OboeAudioSink(
     private var framesSubmitted = 0L
     private var inputEnded = false
     private var playing = false
+
+    // 暂停诊断：记录暂停瞬间设备已消费的帧数与时刻，下次 play() 时对比，
+    // 用于判断「点暂停后音乐还在放」是原生流没停下，还是播放又被人重新拉起。
+    private var framesAtPause = 0L
+    private var pausedAtMs = 0L
 
     private var volume = 1f
     private var audioAttributes = AudioAttributes.DEFAULT
@@ -133,14 +139,28 @@ class OboeAudioSink(
 
     override fun play() {
         playing = true
-        // Idempotent start; the native stream is normally already started so it can pre-buffer.
+        // 暂停期间原生流是否还在消耗帧：delta>0 说明声音其实没停
+        if (pausedAtMs != 0L) {
+            val delta = (oboe?.framesRead() ?: 0L) - framesAtPause
+            val gap = android.os.SystemClock.uptimeMillis() - pausedAtMs
+            CrashLogger.trace("sink play | paused ${gap}ms ago, framesRead delta while paused=$delta")
+        } else {
+            CrashLogger.trace("sink play | isOpen=${oboe?.isOpen}")
+        }
         oboe?.start()
     }
 
     override fun pause() {
-        // Do not requestPause on the native stream. ExoPlayer stops feeding buffers while
-        // paused, and keeping the stream alive avoids the firmware's pause/flush crash path.
         playing = false
+        framesAtPause = oboe?.framesRead() ?: 0L
+        pausedAtMs = android.os.SystemClock.uptimeMillis()
+        CrashLogger.trace("sink pause | isOpen=${oboe?.isOpen} framesRead=$framesAtPause")
+        // Must actually pause the native stream. ExoPlayer calls this when the user taps
+        // pause; if we skip it the Oboe stream keeps draining its internal buffer and
+        // audio continues even though playWhenReady is false.
+        // The crash we saw was in flush() (pause+flush+close/reopen during track change),
+        // not in a simple pause. A standalone pause is safe.
+        oboe?.pause()
     }
 
     override fun handleDiscontinuity() {

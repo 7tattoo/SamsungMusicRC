@@ -138,6 +138,18 @@ class SettingsRepository(context: Context) {
         get() = prefs.getLong(KEY_LAST_QUEUE_POS, 0L)
         set(value) = prefs.edit().putLong(KEY_LAST_QUEUE_POS, value).apply()
 
+    /**
+     * 上次退出的播放意图（播放中 / 已暂停）。
+     *
+     * 队列与进度之外必须单独记一个「是否在播」：进程被杀后重启若不看这个标记，
+     * 恢复播放就无法区分「用户暂停过」和「用户正在播放」，于是暂停也会被
+     * auto-resume 拉回播放，表现成「点暂停无效，音乐继续播放」。
+     * 旧版本没有这个键 → 默认 true，保留原来「接着播」的行为。
+     */
+    var lastQueuePlaying: Boolean
+        get() = prefs.getBoolean(KEY_LAST_QUEUE_PLAYING, true)
+        set(value) = prefs.edit().putBoolean(KEY_LAST_QUEUE_PLAYING, value).apply()
+
     // ── 均衡器（软件 EQ） ──
     var eqEnabled: Boolean
         get() = prefs.getBoolean(KEY_EQ_ENABLED, false)
@@ -240,6 +252,7 @@ class SettingsRepository(context: Context) {
         private const val KEY_LAST_QUEUE = "last_queue_paths"
         private const val KEY_LAST_QUEUE_IDX = "last_queue_index"
         private const val KEY_LAST_QUEUE_POS = "last_queue_position"
+        private const val KEY_LAST_QUEUE_PLAYING = "last_queue_playing"
         private const val KEY_SORT = "sort_mode"
         private const val KEY_FIRST_SCAN = "first_scan_done"
         private const val KEY_EQ_ENABLED = "eq_enabled"

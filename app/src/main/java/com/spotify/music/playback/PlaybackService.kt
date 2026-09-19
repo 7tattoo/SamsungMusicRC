@@ -66,6 +66,23 @@ class PlaybackService : MediaLibraryService() {
 
         /** 手动暂停后拦截外部恢复播放的窗口时长 */
         private const val EXTERNAL_PLAY_GUARD_MS = 15_000L
+
+        /** 日志里打印可读的状态名，避免只看到 0/1/2/3 无法判断 */
+        fun stateName(state: Int): String = when (state) {
+            Player.STATE_IDLE -> "IDLE"
+            Player.STATE_BUFFERING -> "BUFFERING"
+            Player.STATE_READY -> "READY"
+            Player.STATE_ENDED -> "ENDED"
+            else -> "s$state"
+        }
+
+        fun transitionReasonName(reason: Int): String = when (reason) {
+            Player.MEDIA_ITEM_TRANSITION_REASON_REPEAT -> "REPEAT"
+            Player.MEDIA_ITEM_TRANSITION_REASON_AUTO -> "AUTO"
+            Player.MEDIA_ITEM_TRANSITION_REASON_SEEK -> "SEEK"
+            Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED -> "PLAYLIST_CHANGED"
+            else -> "r$reason"
+        }
     }
 
     private lateinit var player: ExoPlayer
@@ -317,7 +334,12 @@ class PlaybackService : MediaLibraryService() {
 
     // ────────────────────────── 恢复 / 预取 / EQ ──────────────────────────
 
-    /** 从磁盘恢复上次队列与进度（暂停态）。进程被杀后重启也能接着播。 */
+    /**
+     * 从磁盘恢复上次队列与进度（暂停态）。进程被杀后重启也能接着播。
+     *
+     * 续播必须受 [SettingsRepository.lastQueuePlaying] 约束：用户最后一次动作
+     * 是「暂停」时，恢复后不能自动开声，否则表现为「点暂停无效，音乐继续播放」。
+     */
     private fun restoreLastQueue() {
         runCatching {
             val paths = settings.lastQueuePaths
@@ -325,16 +347,23 @@ class PlaybackService : MediaLibraryService() {
             if (player.mediaItemCount > 0) return
             val idx = settings.lastQueueIndex
             val pos = settings.lastQueuePositionMs
+            val wasPlaying = settings.lastQueuePlaying
             serviceScope.launch {
                 runCatching {
+                    // 队列可能已被 onPlaybackResumption 交出去，别重复 setMediaItems
+                    if (player.mediaItemCount > 0) return@launch
                     val songs = library.songsByPaths(paths)
                     val items = MediaItemFactory.fromPaths(songs)
                     if (items.isEmpty()) return@launch
+                    if (player.mediaItemCount > 0) return@launch
                     player.setMediaItems(items, idx.coerceIn(0, items.size - 1), pos.coerceAtLeast(0L))
                     player.prepare()
                     player.playWhenReady = false
-                    pendingAutoResume = true
-                    CrashLogger.trace("restoreQueue done items=${items.size} idx=$idx pos=$pos")
+                    pendingAutoResume = wasPlaying
+                    CrashLogger.trace(
+                        "restoreQueue done items=${items.size} idx=$idx pos=$pos " +
+                            "wasPlaying=$wasPlaying autoResume=$wasPlaying"
+                    )
                 }.onFailure { CrashLogger.log(it, "restoreLastQueue") }
             }
         }.onFailure { CrashLogger.log(it, "restoreLastQueue") }
@@ -391,7 +420,10 @@ class PlaybackService : MediaLibraryService() {
 
     private val playerListener = object : Player.Listener {
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
-            CrashLogger.trace("onMediaItemTransition id=${mediaItem?.mediaId} reason=$reason")
+            CrashLogger.trace(
+                "onMediaItemTransition id=${mediaItem?.mediaId} reason=${transitionReasonName(reason)} " +
+                    "playWhenReady=${player.playWhenReady}"
+            )
             handleTrackChanged()
             saveLastQueue()
         }
@@ -402,10 +434,15 @@ class PlaybackService : MediaLibraryService() {
                 CrashLogger.trace("service isPlaying=$isPlaying playWhenReady=${player.playWhenReady}")
                 if (isPlaying) {
                     pendingAutoResume = false
+                    settings.lastQueuePlaying = true
                     startCrossfadeWatch()
                 } else {
                     crossfadeJob?.cancel()
                     player.volume = 1f
+                    // 意图以 playWhenReady 为准：曲目播完 / 缓冲时 isPlaying 也是 false，
+                    // 不能误记成「用户暂停」。这里立即写（单键，无节流），
+                    // 保证用户刚点暂停就闪退时不会恢复成自动续播。
+                    settings.lastQueuePlaying = player.playWhenReady
                     // 暂停即落盘：进程被杀也能从暂停点恢复
                     saveLastQueue(force = true)
                 }
@@ -413,7 +450,11 @@ class PlaybackService : MediaLibraryService() {
         }
 
         override fun onPlaybackStateChanged(playbackState: Int) {
-            CrashLogger.trace("onPlaybackStateChanged state=$playbackState")
+            CrashLogger.trace(
+                "onPlaybackStateChanged state=${stateName(playbackState)}($playbackState) " +
+                    "playWhenReady=${player.playWhenReady} isPlaying=${player.isPlaying} " +
+                    "pos=${player.currentPosition} dur=${player.duration}"
+            )
             saveLastQueue()
         }
 
@@ -570,9 +611,13 @@ class PlaybackService : MediaLibraryService() {
         ): Int {
             runCatching {
                 val external = controller.packageName != packageName
+                // 记录是谁在驱动播放/暂停：外部控制器（原子随身听 / 车机 / 系统通知 / 媒体键）
+                // 的命令是「暂停后又自动开声」的关键线索，必须留痕
                 CrashLogger.trace(
                     "player command req pkg=${controller.packageName} external=$external " +
-                        "code=$commandCode isPlaying=${player.isPlaying} playWhenReady=${player.playWhenReady}"
+                        "code=$commandCode isPlaying=${player.isPlaying} " +
+                        "playWhenReady=${player.playWhenReady} " +
+                        "intent=${if (settings.lastQueuePlaying) "playing" else "paused"}"
                 )
                 if (external && commandCode == Player.COMMAND_PLAY_PAUSE) {
                     val now = SystemClock.elapsedRealtime()
@@ -610,9 +655,16 @@ class PlaybackService : MediaLibraryService() {
                     CMD_REBUILD_OUTPUT -> rebuildAudioOutput()
                     CMD_SKIP_SILENCE -> player.skipSilenceEnabled = args.getBoolean(CMD_ARG_ENABLED)
                     CMD_TOGGLE_PLAY_PAUSE -> {
-                        val intended = player.isPlaying || player.playWhenReady
-                        CrashLogger.trace("service mini toggle intended=$intended isPlaying=${player.isPlaying} playWhenReady=${player.playWhenReady}")
-                        if (intended) {
+                        val wasPlaying = player.isPlaying || player.playWhenReady
+                        val nowPlaying = !wasPlaying
+                        CrashLogger.trace(
+                            "service toggle from=${controller.packageName} wasPlaying=$wasPlaying -> $nowPlaying " +
+                                "state=${stateName(player.playbackState)} backend=${settings.audioOutputMode} " +
+                                "intentWas=${if (settings.lastQueuePlaying) "playing" else "paused"}"
+                        )
+                        // 意图立刻落盘：闪退 / 被系统回收重启后不能把「暂停」恢复成自动续播
+                        settings.lastQueuePlaying = nowPlaying
+                        if (wasPlaying) {
                             // A real user pause cancels the cold-start resume intent, so a
                             // late UI resume command cannot start playback again.
                             pendingAutoResume = false
@@ -624,26 +676,44 @@ class PlaybackService : MediaLibraryService() {
                             player.playWhenReady = true
                             player.play()
                         }
-                    }
-                    CMD_RESUME -> if (pendingAutoResume) {
-                        pendingAutoResume = false
-                        player.play()
-                        CrashLogger.trace("auto-resume after restore")
-                        // On cold start the car/Atomic controller often connects after
-                        // playback has already resumed. Re-send the current track lyrics
-                        // after the controller has had time to subscribe to the session.
+                        // 600ms 后复核：确认暂停真的生效、也没有别的控制器把播放重新拉起
                         serviceScope.launch {
-                            delay(1200L)
-                            runCatching {
-                                val id = player.currentMediaItem?.mediaId
-                                val lrc = id?.let { withContext(Dispatchers.IO) { LyricsLoader.loadWholeLrc(it) } }
-                                if (!lrc.isNullOrEmpty()) {
-                                    CarLyricsBridge.seedLrc(id, lrc)
-                                    session?.setSessionExtras(CarLyricsBridge.atomicExtras(id, lrc))
-                                    CarLyricsBridge.markLrcSent()
-                                    CrashLogger.trace("startup lyrics resend id=$id chars=${lrc.length}")
-                                }
-                            }.onFailure { CrashLogger.log(it, "startup lyrics resend") }
+                            delay(600)
+                            CrashLogger.trace(
+                                "toggle verify expect=$nowPlaying playWhenReady=${player.playWhenReady} " +
+                                    "isPlaying=${player.isPlaying} state=${stateName(player.playbackState)} " +
+                                    "pos=${player.currentPosition} intent=${if (settings.lastQueuePlaying) "playing" else "paused"}"
+                            )
+                        }
+                    }
+                    CMD_RESUME -> {
+                        if (!pendingAutoResume) {
+                            CrashLogger.trace(
+                                "resume skip from=${controller.packageName} " +
+                                    "intent=${if (settings.lastQueuePlaying) "playing" else "paused"} " +
+                                    "playWhenReady=${player.playWhenReady}"
+                            )
+                        }
+                        if (pendingAutoResume) {
+                            pendingAutoResume = false
+                            player.play()
+                            CrashLogger.trace("auto-resume after restore")
+                            // On cold start the car/Atomic controller often connects after
+                            // playback has already resumed. Re-send the current track lyrics
+                            // after the controller has had time to subscribe to the session.
+                            serviceScope.launch {
+                                delay(1200L)
+                                runCatching {
+                                    val id = player.currentMediaItem?.mediaId
+                                    val lrc = id?.let { withContext(Dispatchers.IO) { LyricsLoader.loadWholeLrc(it) } }
+                                    if (!lrc.isNullOrEmpty()) {
+                                        CarLyricsBridge.seedLrc(id, lrc)
+                                        session?.setSessionExtras(CarLyricsBridge.atomicExtras(id, lrc))
+                                        CarLyricsBridge.markLrcSent()
+                                        CrashLogger.trace("startup lyrics resend id=$id chars=${lrc.length}")
+                                    }
+                                }.onFailure { CrashLogger.log(it, "startup lyrics resend") }
+                            }
                         }
                     }
                 }
@@ -659,12 +729,28 @@ class PlaybackService : MediaLibraryService() {
             val future = com.google.common.util.concurrent.SettableFuture.create<MediaSession.MediaItemsWithStartPosition>()
             serviceScope.launch {
                 try {
+                    val wasPlaying = settings.lastQueuePlaying
+                    CrashLogger.trace(
+                        "playbackResumption from=${controller.packageName} forPlayback=$isForPlayback " +
+                            "intent=${if (wasPlaying) "playing" else "paused"} items=${player.mediaItemCount}"
+                    )
+                    if (!wasPlaying) {
+                        // 用户最后是按了暂停：Media3 拿到队列后会立刻 play()，
+                        // 这正是「点暂停无效，音乐继续播放」的来源之一。
+                        // 拒绝交接队列，restoreLastQueue 会以暂停态加载。
+                        CrashLogger.trace("playbackResumption refused (last action was pause)")
+                        future.setException(
+                            IllegalStateException("queue restored as paused; refusing auto-resume")
+                        )
+                        return@launch
+                    }
                     val paths = settings.lastQueuePaths
                     val idx = settings.lastQueueIndex.coerceIn(0, (paths.size - 1).coerceAtLeast(0))
                     val items = library.songsByPaths(paths).map { MediaItemFactory.from(it) }
                     if (items.isEmpty()) {
                         future.setException(IllegalStateException("no saved queue"))
                     } else {
+                        pendingAutoResume = false
                         future.set(MediaSession.MediaItemsWithStartPosition(items, idx, settings.lastQueuePositionMs))
                     }
                 } catch (t: Throwable) {
@@ -728,12 +814,19 @@ class PlaybackService : MediaLibraryService() {
             }
             val idx = player.currentMediaItemIndex
             val pos = player.currentPosition.coerceAtLeast(0L) // 原生 sink 初始化前可能返回异常值
+            // playWhenReady 就是「用户是否想继续播」的意图，必须和队列一起落盘
+            val wasPlaying = player.playWhenReady
+            val prev = settings.lastQueuePlaying
             serviceScope.launch(Dispatchers.IO) {
                 runCatching {
                     settings.lastQueuePaths = paths
                     settings.lastQueueIndex = idx
                     settings.lastQueuePositionMs = pos
+                    settings.lastQueuePlaying = wasPlaying
                 }.onFailure { CrashLogger.log(it, "saveLastQueue/write") }
+            }
+            if (prev != wasPlaying) {
+                CrashLogger.trace("saveLastQueue intent $prev -> $wasPlaying")
             }
         }.onFailure { CrashLogger.log(it, "saveLastQueue") }
     }
@@ -758,6 +851,9 @@ class PlaybackService : MediaLibraryService() {
     override fun onTaskRemoved(rootIntent: Intent?) {
         // 用户划掉后台：先把当前进度存下来再决定要不要停服务
         saveLastQueue(force = true)
+        CrashLogger.trace(
+            "onTaskRemoved playWhenReady=${player.playWhenReady} intent=${if (player.playWhenReady) "playing" else "paused"}"
+        )
         if (!player.playWhenReady || player.mediaItemCount == 0) {
             stopSelf()
         }
