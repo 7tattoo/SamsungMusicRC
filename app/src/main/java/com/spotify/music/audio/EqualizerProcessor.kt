@@ -311,11 +311,16 @@ class EqualizerProcessor : BaseAudioProcessor() {
     /** RBJ peaking EQ */
     private fun peaking(s: Section, f0: Float, fs: Int, gainDb: Float) {
         val a = Math.pow(10.0, gainDb / 40.0).toFloat()
-        val safeF0 = f0.coerceIn(10f, fs * 0.45f)
+        // 16 kHz is close to Nyquist on 44.1/48 kHz material. A narrow/high-Q
+        // peaking section there is extremely sensitive to quantisation and can ring
+        // audibly. Keep the control but use a safer effective corner and bandwidth.
+        val isUltraHighBand = f0 >= 15000f
+        val maxNormalizedFrequency = if (isUltraHighBand) 0.30f else 0.45f
+        val safeF0 = f0.coerceIn(10f, fs * maxNormalizedFrequency)
         val w0 = (2.0 * PI * safeF0 / fs).toFloat()
         val cw = cos(w0)
         val sw = sin(w0)
-        val q = 1.1f
+        val q = if (isUltraHighBand) 0.7f else 1.1f
         val alpha = sw / (2f * q)
         val a0 = 1f + alpha / a
         s.b0 = (1f + alpha * a) / a0
