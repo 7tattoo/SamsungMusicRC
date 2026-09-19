@@ -180,12 +180,12 @@ fun EqualizerScreen(
             Divider()
 
             // 低音 / 高音 / 环绕 / 总增益
-            LabeledSlider("低音", bass, 0f, 12f, "+%.0f dB @100Hz", "+%.1f dB @100Hz") {
-                bass = (it * 2).toInt() / 2f; apply()
+            LabeledSlider("低音", bass, -12f, 12f, "%+.0f dB @100Hz", "%+.1f dB @100Hz") {
+                bass = (it * 2).roundToInt() / 2f; apply()
             }
             Divider()
-            LabeledSlider("高音", treble, 0f, 12f, "+%.0f dB @6kHz", "+%.1f dB @6kHz") {
-                treble = (it * 2).toInt() / 2f; apply()
+            LabeledSlider("高音", treble, -12f, 12f, "%+.0f dB @6kHz", "%+.1f dB @6kHz") {
+                treble = (it * 2).roundToInt() / 2f; apply()
             }
             Divider()
             LabeledSlider("环绕增强", width * 100f, 0f, 100f, "%.0f%%", "%.0f%%") {

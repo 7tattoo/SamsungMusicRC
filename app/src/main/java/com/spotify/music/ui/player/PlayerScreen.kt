@@ -194,6 +194,7 @@ private fun PortraitPlayer(
                         path = song?.path,
                         modifier = Modifier
                             .fillMaxWidth(0.68f)
+                            .aspectRatio(1f)
                             .shadow(12.dp, RoundedCornerShape(14.dp))
                             .clip(RoundedCornerShape(14.dp))
                             .clickable { showLyrics = true },

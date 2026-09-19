@@ -587,6 +587,22 @@ class PlaybackService : MediaLibraryService() {
                         pendingAutoResume = false
                         player.play()
                         CrashLogger.trace("auto-resume after restore")
+                        // On cold start the car/Atomic controller often connects after
+                        // playback has already resumed. Re-send the current track lyrics
+                        // after the controller has had time to subscribe to the session.
+                        serviceScope.launch {
+                            delay(1200L)
+                            runCatching {
+                                val id = player.currentMediaItem?.mediaId
+                                val lrc = id?.let { withContext(Dispatchers.IO) { LyricsLoader.loadWholeLrc(it) } }
+                                if (!lrc.isNullOrEmpty()) {
+                                    CarLyricsBridge.seedLrc(id, lrc)
+                                    session?.setSessionExtras(CarLyricsBridge.atomicExtras(id, lrc))
+                                    CarLyricsBridge.markLrcSent()
+                                    CrashLogger.trace("startup lyrics resend id=$id chars=${lrc.length}")
+                                }
+                            }.onFailure { CrashLogger.log(it, "startup lyrics resend") }
+                        }
                     }
                 }
             }.onFailure { CrashLogger.log(it, "onCustomCommand ${customCommand.customAction}") }
