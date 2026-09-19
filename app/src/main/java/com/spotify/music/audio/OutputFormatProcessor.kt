@@ -104,6 +104,9 @@ class OutputFormatProcessor(
                 inputBuffer.position(inputBuffer.limit())
             }
         }
+        // asFloatBuffer()/asShortBuffer() 只推进视图，不推进原 ByteBuffer；
+        // 快速路径必须显式消费输入，否则同一块 PCM 会被 ExoPlayer 无限重试。
+        inputBuffer.position(inputBuffer.limit())
         out.flip()
     }
 
