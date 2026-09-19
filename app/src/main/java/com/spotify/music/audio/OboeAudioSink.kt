@@ -89,19 +89,45 @@ class OboeAudioSink(
             throw AudioSink.ConfigurationException(e, inputFormat)
         }
 
-        outputSampleRate = outputAudioFormat.sampleRate
-        outputChannelCount = outputAudioFormat.channelCount
-        outputEncoding = outputAudioFormat.encoding
-        oboeEncodingId = encodingToOboeId(outputEncoding)
-        outputFrameSize = outputChannelCount * bytesPerSample(outputEncoding)
+        val newSampleRate = outputAudioFormat.sampleRate
+        val newChannelCount = outputAudioFormat.channelCount
+        val newEncoding = outputAudioFormat.encoding
+        val newOboeEncodingId = encodingToOboeId(newEncoding)
+        val newFrameSize = newChannelCount * bytesPerSample(newEncoding)
 
-        oboe?.close()
-        val output = OboeAudioOutput()
-        if (!output.open(audioApi, outputSampleRate, outputChannelCount, oboeEncodingId, exclusive, deviceId)) {
-            throw AudioSink.ConfigurationException("Unable to open Oboe output stream", inputFormat)
+        // Reuse the existing Oboe stream when the output format hasn't changed.
+        // The pipeline (Sonic + OutputFormat) normalises the output, so switching tracks
+        // with different source formats usually yields the same output format. Avoiding
+        // close/reopen prevents native crashes on devices where rapid AAudio stream
+        // recreation kills the process.
+        val canReuse = oboe?.isOpen == true &&
+            outputSampleRate == newSampleRate &&
+            outputChannelCount == newChannelCount &&
+            oboeEncodingId == newOboeEncodingId
+
+        outputSampleRate = newSampleRate
+        outputChannelCount = newChannelCount
+        outputEncoding = newEncoding
+        oboeEncodingId = newOboeEncodingId
+        outputFrameSize = newFrameSize
+
+        if (canReuse) {
+            pendingOutput = null
+            runCatching {
+                oboe?.flush()
+                if (playing) oboe?.start() else oboe?.pause()
+            }.onFailure {
+                com.spotify.music.util.CrashLogger.log(it, "OboeAudioSink.configure reuseStream")
+            }
+        } else {
+            oboe?.close()
+            val output = OboeAudioOutput()
+            if (!output.open(audioApi, outputSampleRate, outputChannelCount, oboeEncodingId, exclusive, deviceId)) {
+                throw AudioSink.ConfigurationException("Unable to open Oboe output stream", inputFormat)
+            }
+            oboe = output
+            if (playing) output.start() else output.pause()
         }
-        oboe = output
-        if (!playing) output.pause()
         resetPlaybackState()
     }
 
@@ -320,6 +346,14 @@ class OboeAudioSink(
         if (n < 0) {
             val recoverable = n == -2
             throw AudioSink.WriteException(n, configuredFormat ?: Format.Builder().build(), recoverable)
+        }
+        if (n == 0) {
+            // Stream may not be started, or its internal buffer is full and the timeout expired.
+            com.spotify.music.util.CrashLogger.log(
+                IllegalStateException("Oboe write returned 0 bytes"),
+                "OboeAudioSink.writeToOboe | isOpen=${output.isOpen} playing=$playing " +
+                    "remaining=${buffer.remaining()} frameSize=$outputFrameSize",
+            )
         }
         if (outputFrameSize > 0) framesSubmitted += n / outputFrameSize
         buffer.position(buffer.position() + n)

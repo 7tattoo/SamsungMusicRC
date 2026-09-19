@@ -54,7 +54,7 @@ Java_com_spotify_music_audio_OboeAudioOutput_nativeOpen(
     oboe::AudioStreamBuilder builder;
     builder.setDirection(oboe::Direction::Output)
             ->setSharingMode(exclusive ? oboe::SharingMode::Exclusive : oboe::SharingMode::Shared)
-            ->setPerformanceMode(oboe::PerformanceMode::None)
+            ->setPerformanceMode(oboe::PerformanceMode::LowLatency)
             ->setFormat(toOboeFormat(encoding))
             ->setChannelCount(channelCount)
             ->setSampleRate(sampleRate)
@@ -84,7 +84,8 @@ Java_com_spotify_music_audio_OboeAudioOutput_nativeOpen(
     }
     sink->channelCount = sink->stream->getChannelCount();
     sink->bytesPerFrame = sink->channelCount * bytesPerSample(sink->stream->getFormat());
-    sink->stream->requestStart();
+    // Do NOT auto-start here. The Kotlin side controls lifecycle via play()/pause().
+    // Auto-starting then immediately pausing causes state-transition issues on some devices.
     return reinterpret_cast<jlong>(sink);
 }
 

@@ -189,7 +189,7 @@ fun EqualizerScreen(
             }
             Divider()
             LabeledSlider("环绕增强", width * 100f, 0f, 100f, "%.0f%%", "%.0f%%") {
-                width = (it * 20).roundToInt() / 100f; apply()
+                width = it.roundToInt() / 100f; apply()
             }
 
             Divider()

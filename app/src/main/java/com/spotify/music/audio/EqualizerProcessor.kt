@@ -141,7 +141,7 @@ class EqualizerProcessor : BaseAudioProcessor() {
     private var chCountCached = 2
 
     private fun widen(x: Float, ch: Int): Float {
-        val w = EqState.width
+        val w = EqState.width.coerceIn(0f, 1f)  // safety clamp — old settings may have >1
         if (w <= 0f || chCountCached != 2) return x
         val self = if (ch == 0) delayL else delayR
         val other = if (ch == 0) delayR else delayL
