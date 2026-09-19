@@ -53,7 +53,14 @@ class OboeAudioSink(
     private var startMediaTimeUs = C.TIME_UNSET
     private var framesSubmitted = 0L
     private var inputEnded = false
-    private var playing = false
+
+    // getFramesRead() 是流创建以来的绝对帧数：换歌复用的是同一条流，
+    // 位置/待播判断必须减去本次会话的帧基线，否则会叠加上一首的帧数。
+    private var frameBase = 0L
+    // 流实际采样率：Oboe 可能按设备原生率重采样，位置换算以它为准而非请求值。
+    private var actualSampleRate = 0
+    // 连续写阻塞计数：超时/写 0 字节都是瞬态，连拍多下无进展才重开流。
+    private var stallCount = 0
 
     // 暂停诊断：记录暂停瞬间设备已消费的帧数与时刻，下次 play() 时对比，
     // 用于判断「点暂停后音乐还在放」是原生流没停下，还是播放又被人重新拉起。
@@ -134,14 +141,14 @@ class OboeAudioSink(
             // stream started so blocking writes can pre-buffer instead of returning 0.
             output.start()
         }
+        actualSampleRate = oboe?.outputSampleRate() ?: newSampleRate
         resetPlaybackState()
     }
 
     override fun play() {
-        playing = true
         // 暂停期间原生流是否还在消耗帧：delta>0 说明声音其实没停
         if (pausedAtMs != 0L) {
-            val delta = (oboe?.framesRead() ?: 0L) - framesAtPause
+            val delta = ((oboe?.framesRead() ?: 0L) - framesAtPause).coerceAtLeast(0L)
             val gap = android.os.SystemClock.uptimeMillis() - pausedAtMs
             CrashLogger.trace("sink play | paused ${gap}ms ago, framesRead delta while paused=$delta")
         } else {
@@ -151,7 +158,6 @@ class OboeAudioSink(
     }
 
     override fun pause() {
-        playing = false
         framesAtPause = oboe?.framesRead() ?: 0L
         pausedAtMs = android.os.SystemClock.uptimeMillis()
         CrashLogger.trace("sink pause | isOpen=${oboe?.isOpen} framesRead=$framesAtPause")
@@ -165,6 +171,7 @@ class OboeAudioSink(
 
     override fun handleDiscontinuity() {
         startMediaTimeUs = C.TIME_UNSET
+        frameBase = oboe?.framesRead() ?: 0L
     }
 
     @Throws(AudioSink.InitializationException::class, AudioSink.WriteException::class)
@@ -197,7 +204,7 @@ class OboeAudioSink(
     override fun hasPendingData(): Boolean {
         if (pendingOutput?.hasRemaining() == true) return true
         if (pipeline.isOperational && !pipeline.isEnded()) return true
-        val read = oboe?.framesRead() ?: 0L
+        val read = (oboe?.framesRead() ?: 0L) - frameBase
         return framesSubmitted > read
     }
 
@@ -235,11 +242,11 @@ class OboeAudioSink(
 
     override fun getCurrentPositionUs(sourceEnded: Boolean): Long {
         val output = oboe ?: return AudioSink.CURRENT_POSITION_NOT_SET
-        if (startMediaTimeUs == C.TIME_UNSET || outputSampleRate <= 0) {
+        if (startMediaTimeUs == C.TIME_UNSET || actualSampleRate <= 0) {
             return AudioSink.CURRENT_POSITION_NOT_SET
         }
         val framesRead = output.framesRead()
-        return startMediaTimeUs + framesRead * C.MICROS_PER_SECOND / outputSampleRate
+        return startMediaTimeUs + (framesRead - frameBase) * C.MICROS_PER_SECOND / actualSampleRate
     }
 
     override fun flush() {
@@ -264,6 +271,8 @@ class OboeAudioSink(
         startMediaTimeUs = C.TIME_UNSET
         framesSubmitted = 0L
         inputEnded = false
+        frameBase = oboe?.framesRead() ?: 0L
+        stallCount = 0
     }
 
     /** Drains any pending output and everything the pipeline can currently produce. */
@@ -307,7 +316,7 @@ class OboeAudioSink(
         val done = writeToOboe(toWrite)
         val consumed = toWrite.position() - startPos
         if (needsCopy) {
-            buffer.position(buffer.position() + consumed)
+            buffer.position((buffer.position() + consumed).coerceAtMost(buffer.limit()))
         }
         return done && !buffer.hasRemaining()
     }
@@ -356,21 +365,61 @@ class OboeAudioSink(
         val output = oboe ?: return false
         if (!buffer.hasRemaining()) return true
         val n = output.write(buffer, buffer.position(), buffer.remaining(), WRITE_TIMEOUT_NS)
-        if (n < 0) {
-            val recoverable = n == -2
-            throw AudioSink.WriteException(n, configuredFormat ?: Format.Builder().build(), recoverable)
+        if (n == -2) {
+            // 设备断开（后台播放/切歌时 HAL 收回流）。原地重开一条同参新流，
+            // 上层随即重试同一块缓冲；只有重开失败才抛「可恢复」异常，
+            // 绝不让一次断开变成 Media3 的致命错误把播放器打进 IDLE。
+            if (reopenStream()) return false
+            throw AudioSink.WriteException(n, configuredFormat ?: Format.Builder().build(), true)
         }
+        if (n < 0 || (n == 0 && buffer.remaining() >= outputFrameSize)) {
+            // 写超时 / 缓冲满：瞬态，让上层重试。连续多拍无进展则重开流防楔死。
+            if (++stallCount >= MAX_CONSECUTIVE_STALLS) {
+                stallCount = 0
+                if (!reopenStream()) {
+                    throw AudioSink.WriteException(n, configuredFormat ?: Format.Builder().build(), false)
+                }
+            }
+            return false
+        }
+        stallCount = 0
         if (n == 0) {
-            // Stream may not be started, or its internal buffer is full and the timeout expired.
-            com.spotify.music.util.CrashLogger.log(
-                IllegalStateException("Oboe write returned 0 bytes"),
-                "OboeAudioSink.writeToOboe | isOpen=${output.isOpen} playing=$playing " +
-                    "remaining=${buffer.remaining()} frameSize=$outputFrameSize",
-            )
+            // 剩余不足一帧的尾部字节，直接消费掉，避免无限重试
+            buffer.position(buffer.limit())
+            return true
         }
         if (outputFrameSize > 0) framesSubmitted += n / outputFrameSize
-        buffer.position(buffer.position() + n)
+        buffer.position((buffer.position() + n).coerceAtMost(buffer.limit()))
         return !buffer.hasRemaining()
+    }
+
+    /**
+     * 断开/楔死后重开一条同参 Oboe 流。只应在写入路径（播放线程）调用；
+     * 重开成功后把帧基线清零，位置换算以新流为准。
+     */
+    private fun reopenStream(): Boolean {
+        val old = oboe
+        runCatching { old?.close() }
+        return try {
+            val output = OboeAudioOutput()
+            if (!output.open(audioApi, outputSampleRate, outputChannelCount, oboeEncodingId, exclusive, deviceId)) {
+                CrashLogger.log(
+                    IllegalStateException("Oboe reopen failed"),
+                    "OboeAudioSink.reopenStream | rate=$outputSampleRate ch=$outputChannelCount enc=$oboeEncodingId",
+                )
+                false
+            } else {
+                output.start()
+                oboe = output
+                actualSampleRate = output.outputSampleRate()
+                frameBase = 0L
+                stallCount = 0
+                true
+            }
+        } catch (t: Throwable) {
+            CrashLogger.log(t, "OboeAudioSink.reopenStream")
+            false
+        }
     }
 
     private fun encodingToOboeId(encoding: Int): Int = when (encoding) {
@@ -394,6 +443,8 @@ class OboeAudioSink(
         const val AUDIO_API_OPENSLES = 2
         // Bound blocking writes so a stalled/disconnected device can't wedge the audio thread.
         private const val WRITE_TIMEOUT_NS = 200_000_000L
+        // 连续写 0 字节/超时多少次后判定流已楔死并重开（每次最多等 200ms，8 拍约 1.6s）。
+        private const val MAX_CONSECUTIVE_STALLS = 8
         private val EMPTY: ByteBuffer = ByteBuffer.allocateDirect(0).order(ByteOrder.nativeOrder())
     }
 }

@@ -11,8 +11,15 @@ import java.io.File
  */
 object LyricsLoader {
 
-    private val cache = HashMap<String, Lyrics>()
-    private val wholeTextCache = HashMap<String, String>()
+    /** 单曲歌词文本很小（约 1~4KB），但整库 300+ 首无上限累积也有几 MB，这里按 LRU 限容 */
+    private const val MAX_CACHE = 64
+
+    private val cache = object : LinkedHashMap<String, Lyrics>(MAX_CACHE, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Lyrics>): Boolean = size > MAX_CACHE
+    }
+    private val wholeTextCache = object : LinkedHashMap<String, String>(MAX_CACHE, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, String>): Boolean = size > MAX_CACHE
+    }
 
     @Synchronized
     fun load(audioPath: String): Lyrics {

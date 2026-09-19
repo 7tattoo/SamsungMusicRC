@@ -17,7 +17,8 @@ object CoverLoader {
 
     /** 解码目标最大边长：UI 最大用到全屏封面，640px 足够（配合 GPU 缩放） */
     private const val MAX_PX = 640
-    private const val THUMB_MAX_PX = 512
+    /** 嵌入队列 MediaItem 的封面缩略图边长：再大车机/通知也用不上，且每首歌多占几十 KB 常驻内存 */
+    private const val THUMB_MAX_PX = 320
     /** 缓存上限：24MB（约 40~60 张 640px 封面） */
     private const val MAX_CACHE_BYTES = 24 * 1024 * 1024
 
@@ -70,7 +71,7 @@ object CoverLoader {
         return sample.coerceAtLeast(1)
     }
 
-    /** 供通知/车机使用的缩略图字节（≤512px JPEG），无封面返回 null */
+    /** 供通知/车机使用的缩略图字节（≤320px JPEG），无封面返回 null */
     fun loadThumbBytes(path: String): ByteArray? {
         return try {
             val bmp = load(path) ?: return null

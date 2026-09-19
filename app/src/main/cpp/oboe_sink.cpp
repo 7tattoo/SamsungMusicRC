@@ -105,7 +105,10 @@ Java_com_spotify_music_audio_OboeAudioOutput_nativeWrite(
 
     auto result = sink->stream->write(base + offset, numFrames, timeoutNanos);
     if (!result) {
-        return (result.error() == oboe::Result::ErrorDisconnected) ? -2 : -1;
+        // ErrorDisconnected -> -2（Kotlin 重开流后续播）；
+        // 其余（ErrorTimeout / ErrorInvalidState / ErrorUnavailable 等）都是瞬态 -> 0，
+        // Kotlin 侧重试并用楔死计数器兜底，绝不把一次超时当致命错误。
+        return (result.error() == oboe::Result::ErrorDisconnected) ? -2 : 0;
     }
     return result.value() * sink->bytesPerFrame;
 }
