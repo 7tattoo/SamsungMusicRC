@@ -21,6 +21,7 @@ capture/
 local_build_*.sh
 app/src/main/jniLibs/**/libsamsung_oboe.so
 
-# AGP extracts this from the androidx.graphics-path AAR at build time;
-# keep a local copy for sandbox builds but do not track it.
-app/src/main/jniLibs/**/libandroidx.graphics.path.so
+
+# jniLibs 预编译库全部不跟踪：CI 由 CMake + oboe AAR prefab 提供（曾因双份
+# libc++_shared/liboboe 在 mergeReleaseNativeLibs 冲突）；沙箱本地构建用磁盘上的副本。
+app/src/main/jniLibs/**/*.so
