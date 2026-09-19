@@ -264,9 +264,12 @@ class EqualizerProcessor : BaseAudioProcessor() {
 
     /** 削波保护：接近满幅时软压缩，避免正增益爆音 */
     private fun softClip(x: Float): Float {
-        if (x > 0.96f) return 0.96f + 0.04f * tanh((x - 0.96f) * 12f)
-        if (x < -0.96f) return -0.96f + 0.04f * tanh((x + 0.96f) * 12f)
-        return x
+        // A malformed/unstable biquad must never turn into NaN. NaN comparisons
+        // otherwise fall through and is converted to zero by PCM integer sinks.
+        val finite = if (x.isFinite()) x else 0f
+        if (finite > 0.96f) return 0.96f + 0.04f * tanh((finite - 0.96f) * 12f)
+        if (finite < -0.96f) return -0.96f + 0.04f * tanh((finite + 0.96f) * 12f)
+        return finite.coerceIn(-1f, 1f)
     }
 
     /** 依据当前参数与采样率重算全部滤波器系数 */
@@ -295,7 +298,8 @@ class EqualizerProcessor : BaseAudioProcessor() {
     /** RBJ peaking EQ */
     private fun peaking(s: Section, f0: Float, fs: Int, gainDb: Float) {
         val a = Math.pow(10.0, gainDb / 40.0).toFloat()
-        val w0 = (2.0 * PI * f0 / fs).toFloat()
+        val safeF0 = f0.coerceIn(10f, fs * 0.45f)
+        val w0 = (2.0 * PI * safeF0 / fs).toFloat()
         val cw = cos(w0)
         val sw = sin(w0)
         val q = 1.1f
@@ -312,7 +316,8 @@ class EqualizerProcessor : BaseAudioProcessor() {
     /** RBJ low shelf（低音增强） */
     private fun lowShelf(s: Section, f0: Float, fs: Int, gainDb: Float) {
         val a = Math.pow(10.0, gainDb / 40.0).toFloat()
-        val w0 = (2.0 * PI * f0 / fs).toFloat()
+        val safeF0 = f0.coerceIn(10f, fs * 0.45f)
+        val w0 = (2.0 * PI * safeF0 / fs).toFloat()
         val cw = cos(w0)
         val sw = sin(w0)
         val sqrtA = sqrt(a)
@@ -330,7 +335,8 @@ class EqualizerProcessor : BaseAudioProcessor() {
     /** RBJ high shelf（高音增强） */
     private fun highShelf(s: Section, f0: Float, fs: Int, gainDb: Float) {
         val a = Math.pow(10.0, gainDb / 40.0).toFloat()
-        val w0 = (2.0 * PI * f0 / fs).toFloat()
+        val safeF0 = f0.coerceIn(10f, fs * 0.45f)
+        val w0 = (2.0 * PI * safeF0 / fs).toFloat()
         val cw = cos(w0)
         val sw = sin(w0)
         val sqrtA = sqrt(a)

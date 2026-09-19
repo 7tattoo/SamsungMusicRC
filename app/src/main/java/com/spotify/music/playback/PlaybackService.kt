@@ -145,11 +145,29 @@ class PlaybackService : MediaLibraryService() {
                     // This avoids close/open when the next FLAC has a different rate/channel layout.
                     val nativeRate = settings.audioSampleRate.takeIf { it > 0 } ?: 48000
                     val channelMixer = androidx.media3.common.audio.ChannelMixingAudioProcessor().apply {
+                        // Media3 only implements a subset of default constant-power
+                        // matrices (7->2 is intentionally unsupported). Use an explicit
+                        // safe stereo matrix for every decoder channel count instead.
                         for (channels in 1..8) {
+                            val coefficients = FloatArray(channels * 2)
+                            if (channels == 1) {
+                                coefficients[0] = 0.7071f
+                                coefficients[1] = 0.7071f
+                            } else {
+                                coefficients[0] = 1f
+                                coefficients[1] = 0f
+                                coefficients[2] = 0f
+                                coefficients[3] = 1f
+                                for (input in 2 until channels) {
+                                    coefficients[input * 2] = 0.5f
+                                    coefficients[input * 2 + 1] = 0.5f
+                                }
+                            }
                             putChannelMixingMatrix(
-                                androidx.media3.common.audio.ChannelMixingMatrix.createForConstantPower(
+                                androidx.media3.common.audio.ChannelMixingMatrix(
                                     channels,
                                     2,
+                                    coefficients,
                                 ),
                             )
                         }
