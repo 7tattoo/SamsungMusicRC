@@ -4,6 +4,7 @@ import android.app.PendingIntent
 import android.content.ComponentName
 import android.content.Intent
 import android.os.Bundle
+import android.os.SystemClock
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
@@ -62,6 +63,9 @@ class PlaybackService : MediaLibraryService() {
         private const val MAX_SAVE_QUEUE = 500
 
         const val CMD_RESUME = "com.spotify.music.RESUME"
+
+        /** 手动暂停后拦截外部恢复播放的窗口时长 */
+        private const val EXTERNAL_PLAY_GUARD_MS = 15_000L
     }
 
     private lateinit var player: ExoPlayer
@@ -81,6 +85,12 @@ class PlaybackService : MediaLibraryService() {
     private var lastQueueSaveAt: Long = 0L
     /** 服务刚从磁盘恢复过队列（进程重启后）：等 App 前台连上时自动续播一次 */
     @Volatile private var pendingAutoResume = false
+    /**
+     * 用户在 App 内手动暂停后的保护窗口：期间拦截外部控制器（vivo 音乐组件 /
+     * 原子随身听 / 车机 / 蓝牙重连）发来的恢复播放，避免"刚暂停就被悄悄续上"。
+     * 只拦外部包名，App 自己的控制器不受影响。
+     */
+    @Volatile private var externalPlayGuardUntilMs = 0L
 
     override fun onCreate() {
         super.onCreate()
@@ -389,6 +399,7 @@ class PlaybackService : MediaLibraryService() {
         override fun onIsPlayingChanged(isPlaying: Boolean) {
             // 回调跑在主线程 Looper 上，这里抛出任何异常都会变成未捕获异常直接杀进程
             runCatching {
+                CrashLogger.trace("service isPlaying=$isPlaying playWhenReady=${player.playWhenReady}")
                 if (isPlaying) {
                     pendingAutoResume = false
                     startCrossfadeWatch()
@@ -557,14 +568,27 @@ class PlaybackService : MediaLibraryService() {
             controller: MediaSession.ControllerInfo,
             commandCode: Int,
         ): Int {
-            // "允许外部设备开始播放"：关闭时，外部控制器不能在无队列时启动播放
-            val external = controller.packageName != packageName
-            if (!settings.allowExternalStart && external &&
-                player.mediaItemCount == 0 &&
-                commandCode == Player.COMMAND_PLAY_PAUSE
-            ) {
-                return SessionResult.RESULT_INFO_SKIPPED
-            }
+            runCatching {
+                val external = controller.packageName != packageName
+                CrashLogger.trace(
+                    "player command req pkg=${controller.packageName} external=$external " +
+                        "code=$commandCode isPlaying=${player.isPlaying} playWhenReady=${player.playWhenReady}"
+                )
+                if (external && commandCode == Player.COMMAND_PLAY_PAUSE) {
+                    val now = SystemClock.elapsedRealtime()
+                    if (now < externalPlayGuardUntilMs && !player.isPlaying) {
+                        CrashLogger.trace("external play suppressed (recent in-app pause)")
+                        return SessionResult.RESULT_INFO_SKIPPED
+                    }
+                }
+                // "允许外部设备开始播放"：关闭时，外部控制器不能在无队列时启动播放
+                if (!settings.allowExternalStart && external &&
+                    player.mediaItemCount == 0 &&
+                    commandCode == Player.COMMAND_PLAY_PAUSE
+                ) {
+                    return SessionResult.RESULT_INFO_SKIPPED
+                }
+            }.onFailure { CrashLogger.log(it, "onPlayerCommandRequest") }
             return super.onPlayerCommandRequest(session, controller, commandCode)
         }
 
@@ -592,6 +616,8 @@ class PlaybackService : MediaLibraryService() {
                             // A real user pause cancels the cold-start resume intent, so a
                             // late UI resume command cannot start playback again.
                             pendingAutoResume = false
+                            externalPlayGuardUntilMs =
+                                SystemClock.elapsedRealtime() + EXTERNAL_PLAY_GUARD_MS
                             player.playWhenReady = false
                             player.pause()
                         } else {
