@@ -112,13 +112,11 @@ class OboeAudioSink(
         outputFrameSize = newFrameSize
 
         if (canReuse) {
+            // Output is fixed-format for the native path. The preceding AudioSink.flush()
+            // resets Media3's pipeline; do not call native flush/pause/start here. Repeated
+            // native state transitions during a format callback are what make some firmware
+            // kill the process after several track changes.
             pendingOutput = null
-            runCatching {
-                oboe?.flush()
-                if (playing) oboe?.start() else oboe?.pause()
-            }.onFailure {
-                com.spotify.music.util.CrashLogger.log(it, "OboeAudioSink.configure reuseStream")
-            }
         } else {
             oboe?.close()
             val output = OboeAudioOutput()
@@ -126,19 +124,23 @@ class OboeAudioSink(
                 throw AudioSink.ConfigurationException("Unable to open Oboe output stream", inputFormat)
             }
             oboe = output
-            if (playing) output.start() else output.pause()
+            // The sink may receive decoder data before ExoPlayer calls play(). Keep the
+            // stream started so blocking writes can pre-buffer instead of returning 0.
+            output.start()
         }
         resetPlaybackState()
     }
 
     override fun play() {
         playing = true
+        // Idempotent start; the native stream is normally already started so it can pre-buffer.
         oboe?.start()
     }
 
     override fun pause() {
+        // Do not requestPause on the native stream. ExoPlayer stops feeding buffers while
+        // paused, and keeping the stream alive avoids the firmware's pause/flush crash path.
         playing = false
-        oboe?.pause()
     }
 
     override fun handleDiscontinuity() {
@@ -223,18 +225,9 @@ class OboeAudioSink(
     override fun flush() {
         pipeline.flush()
         pendingOutput = null
-        // 切歌/seek 不重开原生流。车机上的 AAudio/OpenSL 在高频 close/open
-        // 与 EQ pipeline flush 同时发生时容易让整个进程被 native 层杀掉。
-        // 保留同一个 Oboe stream，只清空设备缓冲并恢复原播放状态。
-        val output = oboe
-        if (output != null) {
-            runCatching {
-                output.flush()
-                if (playing) output.start() else output.pause()
-            }.onFailure {
-                com.spotify.music.util.CrashLogger.log(it, "OboeAudioSink.flush")
-            }
-        }
+        // Native output is kept started for the lifetime of the sink. Do not call Oboe
+        // pause/flush here: on vivo firmware those transitions race with ExoPlayer's decoder
+        // flush and eventually crash the process or make write() return 0 forever.
         resetPlaybackState()
     }
 

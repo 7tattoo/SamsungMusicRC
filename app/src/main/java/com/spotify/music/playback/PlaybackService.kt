@@ -139,6 +139,45 @@ class PlaybackService : MediaLibraryService() {
                 enableFloatOutput: Boolean,
                 enableAudioTrackPlaybackParams: Boolean,
             ): androidx.media3.exoplayer.audio.AudioSink {
+                if (useNativeSink) {
+                    // Oboe must keep one stable stream across track transitions. Convert every
+                    // source to float, stereo and a fixed rate before handing it to native output.
+                    // This avoids close/open when the next FLAC has a different rate/channel layout.
+                    val nativeRate = settings.audioSampleRate.takeIf { it > 0 } ?: 48000
+                    val channelMixer = androidx.media3.common.audio.ChannelMixingAudioProcessor().apply {
+                        for (channels in 1..8) {
+                            putChannelMixingMatrix(
+                                androidx.media3.common.audio.ChannelMixingMatrix.createForConstantPower(
+                                    channels,
+                                    2,
+                                ),
+                            )
+                        }
+                    }
+                    val nativeSonic = androidx.media3.common.audio.SonicAudioProcessor().apply {
+                        setOutputSampleRateHz(nativeRate)
+                    }
+                    val nativeProcessors = arrayOf(
+                        com.spotify.music.audio.OutputFormatProcessor(
+                            requestedBitDepth = "float",
+                            preferFloatWhenAutomatic = true,
+                        ),
+                        channelMixer,
+                        eqProcessor,
+                        nativeSonic,
+                        com.spotify.music.audio.OutputFormatProcessor(
+                            requestedBitDepth = "float",
+                            preferFloatWhenAutomatic = true,
+                        ),
+                    )
+                    return com.spotify.music.audio.OboeAudioSink(
+                        audioApi = nativeApi,
+                        exclusive = settings.usbExclusive,
+                        deviceId = settings.audioOutputDeviceId,
+                        processors = nativeProcessors.toList(),
+                    )
+                }
+
                 val sonic = androidx.media3.common.audio.SonicAudioProcessor().apply {
                     setOutputSampleRateHz(
                         settings.audioSampleRate.takeIf { it > 0 }
@@ -153,19 +192,10 @@ class PlaybackService : MediaLibraryService() {
                     ),
                     sonic,
                     com.spotify.music.audio.OutputFormatProcessor(
-                        // AAudio endpoint is opened as PCM float; manual integer depth applies to AudioTrack.
                         requestedBitDepth = settings.audioBitDepth,
                         preferFloatWhenAutomatic = enableFloatOutput,
                     ),
                 )
-                if (useNativeSink) {
-                    return com.spotify.music.audio.OboeAudioSink(
-                        audioApi = nativeApi,
-                        exclusive = settings.usbExclusive,
-                        deviceId = settings.audioOutputDeviceId,
-                        processors = processors.toList(),
-                    )
-                }
                 return androidx.media3.exoplayer.audio.DefaultAudioSink.Builder(context)
                     .setAudioProcessors(processors)
                     .setEnableFloatOutput(enableFloatOutput || settings.audioBitDepth == "float")

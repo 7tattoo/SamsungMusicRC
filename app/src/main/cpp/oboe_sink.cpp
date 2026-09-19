@@ -84,8 +84,9 @@ Java_com_spotify_music_audio_OboeAudioOutput_nativeOpen(
     }
     sink->channelCount = sink->stream->getChannelCount();
     sink->bytesPerFrame = sink->channelCount * bytesPerSample(sink->stream->getFormat());
-    // Do NOT auto-start here. The Kotlin side controls lifecycle via play()/pause().
-    // Auto-starting then immediately pausing causes state-transition issues on some devices.
+    // Start immediately so ExoPlayer can pre-buffer before it calls AudioSink.play().
+    // The old APK's prebuilt library has this behavior too; keep source and packaged ABI aligned.
+    sink->stream->requestStart();
     return reinterpret_cast<jlong>(sink);
 }
 
