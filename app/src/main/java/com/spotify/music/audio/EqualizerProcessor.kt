@@ -107,6 +107,9 @@ class EqualizerProcessor : BaseAudioProcessor() {
             s1a = 0f; s2a = 0f; s1b = 0f; s2b = 0f; s1c = 0f; s2c = 0f; s1d = 0f; s2d = 0f
         }
 
+        /** 恒等段（b0==1 其余 0）：纯直通，实时循环里可跳过。恒等时状态恒为 0。 */
+        fun isIdentity(): Boolean = b0 == 1f && b1 == 0f && b2 == 0f && a1 == 0f && a2 == 0f
+
         inline fun process(x: Float, ch: Int): Float {
             // A single unstable/non-finite sample must not poison the biquad state.
             // Once DF2T state becomes NaN, every following sample becomes NaN and
@@ -140,6 +143,12 @@ class EqualizerProcessor : BaseAudioProcessor() {
     }
 
     private val sections: Array<Section> = Array(EqState.BAND_COUNT + 2) { Section() } // +低音/高音架
+    /**
+     * 仅包含当前非恒等（非 0 dB）的段，音频线程据此跳过用不到的滤波器。
+     * Hi-Res(88.2/96kHz+) 下实时预算紧张，把 12 段全跑一遍很容易让 AudioTrack
+     * 欠载、表现为「部分音乐开均衡器后卡顿/破音」，所以只处理实际生效的段。
+     */
+    private var activeSections: Array<Section> = emptyArray()
     private var masterGain = 1f
     private var coeffVersion = -1
     private var coeffSampleRate = -1
@@ -268,10 +277,11 @@ class EqualizerProcessor : BaseAudioProcessor() {
         out.position(out.position() + n * 4)
     }
 
-    /** 对单个样本跑一遍滤波链（ch 用于选择声道状态） */
+    /** 对单个样本跑一遍滤波链（ch 用于选择声道状态；只跑非恒等段以省实时开销） */
     private fun eqSample(x: Float, ch: Int): Float {
         var y = x
-        for (sec in sections) y = sec.process(y, ch)
+        val active = activeSections
+        for (i in active.indices) y = active[i].process(y, ch)
         return y
     }
 
@@ -290,17 +300,16 @@ class EqualizerProcessor : BaseAudioProcessor() {
         val sr = sampleRate.coerceAtLeast(8000)
         for (b in 0 until EqState.BAND_COUNT) {
             val gain = EqState.bandGainsDb[b]
-            if (gain == 0f) {
-                identity(sections[b])
-            } else {
-                peaking(sections[b], EqState.BAND_FREQS[b], sr, gain)
-            }
+            if (gain == 0f) identity(sections[b]) else peaking(sections[b], EqState.BAND_FREQS[b], sr, gain)
         }
         val bass = EqState.bassBoostDb
         if (bass == 0f) identity(bassSection) else lowShelf(bassSection, 100f, sr, bass)
         val treble = EqState.trebleDb
         if (treble == 0f) identity(trebleSection) else highShelf(trebleSection, 6000f, sr, treble)
         masterGain = Math.pow(10.0, EqState.preampDb / 20.0).toFloat()
+
+        // 只保留真正生效的段进实时循环；恒等段是纯直通，跳过结果不变。
+        activeSections = sections.filter { sec -> !sec.isIdentity() }.toTypedArray()
     }
 
     private fun identity(s: Section) {
