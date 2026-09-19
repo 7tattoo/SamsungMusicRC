@@ -12,14 +12,36 @@ import com.spotify.music.core.model.Lyrics
  */
 object LrcParser {
 
-    private val LINE_TIME_REGEX = Regex("""\[(\d{1,3}):(\d{1,2})(?:[.:](\d{1,3}))?]""")
+    private val LINE_TIME_REGEX = Regex("""\[\s*(\d{1,3})\s*:\s*(\d{1,2})(?:\s*[.:]\s*(\d{1,3}))?\s*]""")
+    // 时:分:秒 变体（部分工具写 [0:01:23.45]）
+    private val HMS_TIME_REGEX = Regex("""\[\s*(\d{1,3})\s*:\s*(\d{1,2})\s*:\s*(\d{1,2})(?:\s*[.:]\s*(\d{1,3}))?\s*]""")
     private val META_REGEX = Regex("""^\[(ti|ar|al|by|offset|au|length):(.*)]$""", RegexOption.IGNORE_CASE)
     private val WORD_TIME_REGEX = Regex("""<\d{1,3}:\d{1,2}(?:[.:]\d{1,3})?>""")
 
     fun parse(raw: String): Lyrics {
-        // Embedded Vorbis comments and UTF-8 sidecar files may start with a BOM.
-        // Keep it out of the first timestamp token so the first line is not lost.
+        val strict = parseStrict(raw)
+        if (strict.lines.isNotEmpty()) return strict
+        // 严格模式一行未中 → 用宽松规则再试一次（全角标点容错）
+        val loose = parseLoose(raw)
+        if (loose.lines.isNotEmpty()) return loose
+        return strict
+    }
+
+    private fun parseLoose(raw: String): Lyrics {
+        val normalized = raw.removePrefix("\uFEFF")
+            .replace("：", ":").replace("．", ".")
+            .replace("［", "[").replace("］", "]")
+            .replace("【", "[").replace("】", "]")
+            .replace("\r\n", "\n").replace('\r', '\n')
+        return parseInternal(normalized)
+    }
+
+    private fun parseStrict(raw: String): Lyrics {
         val normalizedRaw = raw.removePrefix("\uFEFF").replace("\r\n", "\n").replace('\r', '\n')
+        return parseInternal(normalizedRaw)
+    }
+
+    private fun parseInternal(normalizedRaw: String): Lyrics {
         if (normalizedRaw.isBlank()) return Lyrics.EMPTY
         var offsetMs = 0L
         val out = ArrayList<LyricLine>(64)
@@ -37,6 +59,16 @@ object LrcParser {
             }
 
             val times = LINE_TIME_REGEX.findAll(line).toList()
+                .ifEmpty {
+                    // [hh:mm:ss(.xx)] 变体：归一化成 [mm:ss.xx] 后再跑主正则
+                    HMS_TIME_REGEX.replace(line) { m ->
+                        val h = m.groupValues[1].toLong()
+                        val mm = m.groupValues[2]
+                        val ss = m.groupValues[3]
+                        val frac = m.groupValues[4].ifEmpty { "0" }
+                        "[${h * 60 + mm.toLong()}:$ss.${frac}]"
+                    }.let { LINE_TIME_REGEX.findAll(it).toList() }
+                }
             if (times.isEmpty()) {
                 val text = WORD_TIME_REGEX.replace(line, "").trim()
                 if (text.isNotEmpty() && !text.startsWith("[")) {
@@ -50,7 +82,7 @@ object LrcParser {
                 .trim()
             if (text.isEmpty()) return@forEach
             times.forEach { m ->
-                val min = m.groupValues[1].toLong()
+                val min = m.groupValues[1].toLong().coerceAtMost(5999)
                 val sec = m.groupValues[2].toLong()
                 val fracRaw = m.groupValues[3]
                 val frac = when (fracRaw.length) {

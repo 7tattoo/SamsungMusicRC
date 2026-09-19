@@ -69,7 +69,10 @@ object LyricsLoader {
             ?: "[]"
         val embedded = runCatching { EmbeddedLyricsReader.describe(audioPath) }
             .getOrDefault("embed-probe-error")
-        return "sidecar=$sidecars embedded=$embedded"
+        // 解析探针：raw 读到了但 parse 为空 = 解析器问题；raw 为 null = 来源问题
+        val raw = readRaw(audioPath)
+        val parsedLines = raw?.let { LrcParser.parse(it).lines.size } ?: -1
+        return "sidecar=$sidecars embedded=$embedded rawChars=${raw?.length ?: 0} parsedLines=$parsedLines"
     }
 
     /**

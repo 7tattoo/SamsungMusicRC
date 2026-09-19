@@ -19,6 +19,7 @@ struct OboeSink {
     std::mutex mutex;
     int channelCount = 2;
     int bytesPerFrame = 4;
+    int audioApi = 0; // 1=AAudio 2=OpenSL ES（暂停策略按后端区分）
 };
 
 oboe::AudioFormat toOboeFormat(int encoding) {
@@ -54,13 +55,26 @@ Java_com_spotify_music_audio_OboeAudioOutput_nativeOpen(
     oboe::AudioStreamBuilder builder;
     builder.setDirection(oboe::Direction::Output)
             ->setSharingMode(exclusive ? oboe::SharingMode::Exclusive : oboe::SharingMode::Shared)
-            ->setPerformanceMode(oboe::PerformanceMode::LowLatency)
+            // LowLatency targets tiny HW buffers (~8ms); music playback needs jitter
+            // tolerance instead. vivo OpenSL/AAudio HALs audibly crackle the moment
+            // any DSP work (EQ) or GC pause lands on the playback thread. None mode
+            // plus an explicit multi-burst buffer below is the streaming recipe.
+            ->setPerformanceMode(oboe::PerformanceMode::None)
             ->setFormat(toOboeFormat(encoding))
             ->setChannelCount(channelCount)
             ->setSampleRate(sampleRate)
             ->setSampleRateConversionQuality(oboe::SampleRateConversionQuality::Medium)
             ->setUsage(oboe::Usage::Media)
             ->setContentType(oboe::ContentType::Music);
+
+    // 音乐流：不追低延迟，给足抖动余量（~200ms）。vivo 的 OpenSL/AAudio HAL
+    // 默认队列只有几 ms，音频线程上任何 EQ/GC 抖动立刻欠载（电流声/刺啦）。
+    {
+        const int32_t estBurst = sampleRate / 100; // 按 ~10ms burst 估
+        int32_t capacity = sampleRate / 5;         // 200ms
+        if (estBurst > 0) capacity = std::max(capacity, estBurst * 8);
+        builder.setBufferCapacityInFrames(capacity);
+    }
 
     if (audioApi == 1) {
         builder.setAudioApi(oboe::AudioApi::AAudio);
@@ -82,6 +96,7 @@ Java_com_spotify_music_audio_OboeAudioOutput_nativeOpen(
         delete sink;
         return 0;
     }
+    sink->audioApi = audioApi;
     sink->channelCount = sink->stream->getChannelCount();
     sink->bytesPerFrame = sink->channelCount * bytesPerSample(sink->stream->getFormat());
     // Start immediately so ExoPlayer can pre-buffer before it calls AudioSink.play().
@@ -133,7 +148,14 @@ Java_com_spotify_music_audio_OboeAudioOutput_nativePause(JNIEnv*, jobject, jlong
     auto* sink = reinterpret_cast<OboeSink*>(handle);
     if (sink != nullptr && sink->stream) {
         std::lock_guard<std::mutex> lock(sink->mutex);
-        sink->stream->requestPause();
+        // vivo OpenSL HAL 有 requestPause 被静默忽略的问题（trace: 暂停 59.8s
+        // 期间 framesRead 仍前进 1549760 帧 ≈ 32s 音频）。OpenSL 用 requestStop
+        // 强停消费；AAudio 的 requestPause 工作正常（多组 delta=0 证据），保持不变。
+        if (sink->audioApi == 2) {
+            sink->stream->requestStop();
+        } else {
+            sink->stream->requestPause();
+        }
     }
 }
 
@@ -145,6 +167,7 @@ Java_com_spotify_music_audio_OboeAudioOutput_nativeStart(JNIEnv*, jobject, jlong
         sink->stream->requestStart();
     }
 }
+
 
 JNIEXPORT void JNICALL
 Java_com_spotify_music_audio_OboeAudioOutput_nativeFlush(JNIEnv*, jobject, jlong handle) {
