@@ -61,6 +61,7 @@ fun MiniPlayer(
                 .padding(start = 14.dp, bottom = 10.dp)
                 .size(52.dp)
                 .clickable { onExpand() },
+            contentAlignment = Alignment.Center,
         ) {
             Box(
                 Modifier
