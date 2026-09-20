@@ -115,6 +115,25 @@ class SettingsRepository(context: Context) {
         prefs.edit().putString(KEY_PLAYLISTS, arr.toString()).apply()
     }
 
+    // ── 底部标签页管理（隐藏/排序） ──
+    var hiddenTabs: Set<String>
+        get() = prefs.getStringSet(KEY_HIDDEN_TABS, emptySet())?.toSet() ?: emptySet()
+        set(value) = prefs.edit().putStringSet(KEY_HIDDEN_TABS, value).apply()
+
+    var tabOrder: List<String>
+        get() {
+            val json = prefs.getString(KEY_TAB_ORDER, null) ?: return emptyList()
+            return try {
+                val arr = JSONArray(json)
+                (0 until arr.length()).map { arr.getString(it) }
+            } catch (t: Throwable) {
+                emptyList()
+            }
+        }
+        set(value) {
+            prefs.edit().putString(KEY_TAB_ORDER, JSONArray(value).toString()).apply()
+        }
+
     // ── 上次播放队列（用于外部设备恢复播放） ──
     var lastQueuePaths: List<String>
         get() {
@@ -137,30 +156,6 @@ class SettingsRepository(context: Context) {
     var lastQueuePositionMs: Long
         get() = prefs.getLong(KEY_LAST_QUEUE_POS, 0L)
         set(value) = prefs.edit().putLong(KEY_LAST_QUEUE_POS, value).apply()
-
-    /**
-     * 恢复快照原子写：队列/曲目/进度/意图用同一个 editor 提交。
-     * 旧实现分 4 次 apply()，强杀打断时会落一半（老队列+新 intent 之类的混合态），
-     * 表现为「重启后回到第一首或更早的某次快照」。
-     */
-    fun saveLastQueueAtomic(paths: List<String>, idx: Int, pos: Long, wasPlaying: Boolean) {
-        prefs.edit()
-            .putString(KEY_LAST_QUEUE, JSONArray(paths).toString())
-            .putInt(KEY_LAST_QUEUE_IDX, idx)
-            .putLong(KEY_LAST_QUEUE_POS, pos)
-            .putBoolean(KEY_LAST_QUEUE_PLAYING, wasPlaying)
-            .apply()
-    }
-
-    /** 临终同步版：commit() 阻塞写完才返回，强杀前数据已在磁盘上。 */
-    fun saveLastQueueAtomicBlocking(paths: List<String>, idx: Int, pos: Long, wasPlaying: Boolean) {
-        prefs.edit()
-            .putString(KEY_LAST_QUEUE, JSONArray(paths).toString())
-            .putInt(KEY_LAST_QUEUE_IDX, idx)
-            .putLong(KEY_LAST_QUEUE_POS, pos)
-            .putBoolean(KEY_LAST_QUEUE_PLAYING, wasPlaying)
-            .commit()
-    }
 
     /**
      * 上次退出的播放意图（播放中 / 已暂停）。
@@ -281,6 +276,8 @@ class SettingsRepository(context: Context) {
         private const val KEY_NO_DUP = "queue_no_duplicates"
         private const val KEY_FAVORITES = "favorites"
         private const val KEY_PLAYLISTS = "playlists"
+        private const val KEY_HIDDEN_TABS = "hidden_tabs"
+        private const val KEY_TAB_ORDER = "tab_order"
         private const val KEY_LAST_QUEUE = "last_queue_paths"
         private const val KEY_LAST_QUEUE_IDX = "last_queue_index"
         private const val KEY_LAST_QUEUE_POS = "last_queue_position"

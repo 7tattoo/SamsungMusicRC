@@ -1,6 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="about">关于</string>
+    <string name="about_credit">BY MInis &amp; 7Tattoo</string>
+    <string name="about_github_url">https://github.com/7tattoo/SamsungMusicRC</string>
     <string name="about_output">以上为解码后经 DSP/格式处理后的 PCM 参数。
 
 「AAudio / OpenSL ES（Oboe）」模式：由 Oboe 打开原生输出流，Media3 DSP/格式处理链在写入前运行；独占模式只对兼容的 AAudio USB DAC 请求，失败由 Oboe 回退共享。原生模式端点按 Oboe 协商 PCM 格式。
@@ -37,6 +39,7 @@
     <string name="collapse">收起</string>
     <string name="concurrent_desc">开启后导航播报、其他应用播放声音时本应用不暂停(可能被压低音量)</string>
     <string name="concurrent_playback">与其他应用同时播放</string>
+    <string name="confirm_delete_playlist">确定删除播放列表「%1$s」吗？</string>
     <string name="continue_label">继续</string>
     <string name="create">创建</string>
     <string name="crossfade">歌曲之间的淡入淡出</string>
@@ -78,6 +81,7 @@
     <string name="manage_playlists">管理播放列表</string>
     <string name="manage_tabs">管理标签</string>
     <string name="manage_tabs_desc">收藏，播放列表，歌曲，专辑，歌手，文件夹</string>
+    <string name="manage_tabs_hint">长按拖动排序，开关控制显示</string>
     <string name="match_system">匹配手机设置</string>
     <string name="menu">菜单</string>
     <string name="minutes">%1$d 分钟</string>
@@ -102,6 +106,7 @@
     <string name="notifications">通知</string>
     <string name="notifications_desc">用于在应用处于后台时继续控制播放并显示通知</string>
     <string name="off">关</string>
+    <string name="ok">确定</string>
     <string name="on_state">开启</string>
     <string name="onboarding_subtitle">为了正常扫描与播放本地音乐，请查看以下权限说明。</string>
     <string name="onboarding_title">Samsung Music 使用这些权限</string>
@@ -134,6 +139,8 @@
     <string name="queue_settings">队列设置</string>
     <string name="queue_title">播放队列（%1$d首）</string>
     <string name="remove">移除</string>
+    <string name="rename">重命名</string>
+    <string name="reorder">拖动排序</string>
     <string name="required_permission">需要的权限</string>
     <string name="reset">重置</string>
     <string name="reset_all">所有频段归零</string>

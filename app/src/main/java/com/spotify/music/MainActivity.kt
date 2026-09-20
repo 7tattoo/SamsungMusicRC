@@ -40,6 +40,8 @@ import com.spotify.music.ui.settings.OutputScreen
 import com.spotify.music.ui.settings.ScanDirsScreen
 import com.spotify.music.ui.settings.SettingsScreen
 import com.spotify.music.ui.settings.EqualizerScreen
+import com.spotify.music.ui.settings.ManagePlaylistsScreen
+import com.spotify.music.ui.settings.ManageTabsScreen
 import com.spotify.music.ui.theme.LibraryBg
 import com.spotify.music.ui.theme.SamsungMusicTheme
 import com.spotify.music.util.CrashLogger
@@ -74,7 +76,7 @@ class MainActivity : androidx.activity.ComponentActivity() {
     private val settings by lazy { SettingsRepository.get(this) }
     private val uiState by lazy { PlayerUiState(settings, library) }
 
-    enum class Route { LIBRARY, PLAYER, SETTINGS, SCAN_DIRS, HIDDEN_FOLDERS, EQUALIZER, OUTPUT }
+    enum class Route { LIBRARY, PLAYER, SETTINGS, SCAN_DIRS, HIDDEN_FOLDERS, EQUALIZER, OUTPUT, MANAGE_PLAYLISTS, MANAGE_TABS }
 
     /**
      * Android 13+ 必须运行时申请 READ_MEDIA_AUDIO 与 POST_NOTIFICATIONS，
@@ -143,6 +145,8 @@ class MainActivity : androidx.activity.ComponentActivity() {
                     Route.HIDDEN_FOLDERS -> route = Route.SETTINGS
                     Route.EQUALIZER -> route = equalizerReturn
                     Route.OUTPUT -> route = Route.SETTINGS
+                    Route.MANAGE_PLAYLISTS -> route = Route.SETTINGS
+                    Route.MANAGE_TABS -> route = Route.SETTINGS
                 }
             }
             // 系统返回键 / 系统侧滑返回手势
@@ -243,6 +247,8 @@ class MainActivity : androidx.activity.ComponentActivity() {
                                     route = Route.EQUALIZER
                                 },
                                 onOpenOutput = { route = Route.OUTPUT },
+                                onOpenManagePlaylists = { route = Route.MANAGE_PLAYLISTS },
+                                onOpenManageTabs = { route = Route.MANAGE_TABS },
                             )
                             Route.EQUALIZER -> EqualizerScreen(
                                 settings = settings,
@@ -262,6 +268,16 @@ class MainActivity : androidx.activity.ComponentActivity() {
                             )
                             Route.HIDDEN_FOLDERS -> HiddenFoldersScreen(
                                 library = library,
+                                settings = settings,
+                                onBack = { route = Route.SETTINGS },
+                            )
+                            Route.MANAGE_PLAYLISTS -> ManagePlaylistsScreen(
+                                settings = settings,
+                                library = library,
+                                client = client,
+                                onBack = { route = Route.SETTINGS },
+                            )
+                            Route.MANAGE_TABS -> ManageTabsScreen(
                                 settings = settings,
                                 onBack = { route = Route.SETTINGS },
                             )

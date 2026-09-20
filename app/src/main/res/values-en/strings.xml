@@ -1,6 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="about">About</string>
+    <string name="about_credit">BY MInis &amp; 7Tattoo</string>
+    <string name="about_github_url">https://github.com/7tattoo/SamsungMusicRC</string>
     <string name="about_output">PCM parameters above are post-decode, after DSP/format processing.
 
 “AAudio / OpenSL ES (Oboe)” mode: Oboe opens the native output stream, and the Media3 DSP/format chain runs before writing; exclusive mode is only requested for compatible AAudio USB DACs and Oboe falls back to shared mode on failure. The native endpoint uses the PCM format negotiated by Oboe.
@@ -37,6 +39,7 @@
     <string name="collapse">Collapse</string>
     <string name="concurrent_desc">Do not pause when navigation or other apps play sound (volume may be lowered)</string>
     <string name="concurrent_playback">Play along with other apps</string>
+    <string name="confirm_delete_playlist">Delete playlist "%1$s"?</string>
     <string name="continue_label">Continue</string>
     <string name="create">Create</string>
     <string name="crossfade">Crossfade between songs</string>
@@ -78,6 +81,7 @@
     <string name="manage_playlists">Manage playlists</string>
     <string name="manage_tabs">Manage tabs</string>
     <string name="manage_tabs_desc">Favorites, playlists, songs, albums, artists, folders</string>
+    <string name="manage_tabs_hint">Long-press and drag to reorder; toggle to show or hide</string>
     <string name="match_system">Match system</string>
     <string name="menu">Menu</string>
     <string name="minutes">%1$d min</string>
@@ -102,6 +106,7 @@
     <string name="notifications">Notifications</string>
     <string name="notifications_desc">To keep controlling playback and show notifications while the app is in the background</string>
     <string name="off">Off</string>
+    <string name="ok">OK</string>
     <string name="on_state">On</string>
     <string name="onboarding_subtitle">Review the permissions below to scan and play your local music.</string>
     <string name="onboarding_title">Samsung Music uses these permissions</string>
@@ -134,6 +139,8 @@
     <string name="queue_settings">Queue settings</string>
     <string name="queue_title">Queue (%1$d)</string>
     <string name="remove">Remove</string>
+    <string name="rename">Rename</string>
+    <string name="reorder">Reorder</string>
     <string name="required_permission">Required</string>
     <string name="reset">Reset</string>
     <string name="reset_all">Reset all bands to zero</string>

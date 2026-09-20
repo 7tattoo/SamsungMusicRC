@@ -81,10 +81,10 @@ import java.io.File
 import androidx.compose.ui.res.stringResource
 import com.spotify.music.R
 
-private val TABS = listOf("收藏", "播放列表", "歌曲", "专辑", "歌手", "文件夹")
+internal val DEFAULT_TABS = listOf("收藏", "播放列表", "歌曲", "专辑", "歌手", "文件夹")
 
 @Composable
-private fun tabLabel(t: String): String = when (t) {
+internal fun tabLabel(t: String): String = when (t) {
     "收藏" -> stringResource(R.string.tab_favorites)
     "播放列表" -> stringResource(R.string.tab_playlists)
     "歌曲" -> stringResource(R.string.tab_songs)
@@ -111,6 +111,19 @@ fun LibraryScreen(
 ) {
     var tab by remember { mutableStateOf("歌曲") }
     var showBrowseBar by remember { mutableStateOf(browse != null) }
+    // 用户可隐藏/排序底部标签；被隐藏或重排后回到资料库时按最新配置渲染
+    val visibleTabs = remember {
+        buildList {
+            val saved = settings.tabOrder
+            addAll(if (saved.isNotEmpty()) saved else DEFAULT_TABS)
+            DEFAULT_TABS.filter { it !in this }.forEach { add(it) }
+        }.filter { it !in settings.hiddenTabs }
+    }
+    LaunchedEffect(visibleTabs) {
+        if (tab !in visibleTabs) {
+            tab = visibleTabs.firstOrNull() ?: "歌曲"
+        }
+    }
     LaunchedEffect(browse) {
         if (browse != null) {
             tab = "歌曲"
@@ -198,7 +211,7 @@ fun LibraryScreen(
                 .padding(horizontal = 16.dp),
             horizontalArrangement = Arrangement.SpaceEvenly,
         ) {
-            TABS.forEach { t ->
+            visibleTabs.forEach { t ->
                 Text(
                     tabLabel(t),
                     fontSize = 15.sp,
@@ -497,8 +510,7 @@ fun SongRow(
                 onOpenPlayer?.invoke()
             }
             // Keep the MoreVert target away from the right-side A-Z rail.
-            // 间距对照 Samsung Music 参考截图：... 右缘距屏幕右缘约 40dp（视觉空隙约 14dp）。
-            .padding(start = 14.dp, end = 40.dp, top = 8.dp, bottom = 8.dp),
+            .padding(start = 14.dp, end = 34.dp, top = 8.dp, bottom = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         AlbumArt(

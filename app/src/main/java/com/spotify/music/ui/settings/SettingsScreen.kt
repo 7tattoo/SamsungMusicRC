@@ -62,6 +62,8 @@ fun SettingsScreen(
     onOpenHiddenFolders: () -> Unit,
     onOpenEqualizer: () -> Unit = {},
     onOpenOutput: () -> Unit = {},
+    onOpenManagePlaylists: () -> Unit = {},
+    onOpenManageTabs: () -> Unit = {},
 ) {
     val context = LocalContext.current
     var sleepMinutes by remember { mutableIntStateOf(settings.sleepTimerMinutes) }
@@ -205,6 +207,7 @@ fun SettingsScreen(
             Divider()
             RowItem(stringResource(R.string.manage_playlists), showDot = manageDot) {
                 manageDot = false
+                onOpenManagePlaylists()
             }
         }
 
@@ -232,7 +235,9 @@ fun SettingsScreen(
                 client.applySettings()
             }
             Divider()
-            RowItem(stringResource(R.string.manage_tabs), stringResource(R.string.manage_tabs_desc), accent = true) {}
+            RowItem(stringResource(R.string.manage_tabs), stringResource(R.string.manage_tabs_desc), accent = true) {
+                onOpenManageTabs()
+            }
             Divider()
             RowItem(stringResource(R.string.dark_mode), when (darkMode) { "dark" -> stringResource(R.string.dark); "light" -> stringResource(R.string.light); else -> stringResource(R.string.match_system) }, accent = true) {
                 showDarkDialog = true
@@ -266,7 +271,30 @@ fun SettingsScreen(
             }
         }
 
-        Spacer(Modifier.height(24.dp))
+        // ── 关于 ──
+        SectionLabel(stringResource(R.string.about))
+        val aboutUrl = stringResource(R.string.about_github_url)
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 6.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Text(
+                aboutUrl,
+                fontSize = 13.sp,
+                color = SamsungBlue,
+                modifier = Modifier.clickable {
+                    runCatching {
+                        context.startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse(aboutUrl)))
+                    }
+                },
+            )
+            Spacer(Modifier.height(6.dp))
+            Text(stringResource(R.string.about_credit), fontSize = 12.sp, color = TextSecondary)
+        }
+
+        Spacer(Modifier.height(32.dp))
     }
 
     if (showSleepDialog) {
