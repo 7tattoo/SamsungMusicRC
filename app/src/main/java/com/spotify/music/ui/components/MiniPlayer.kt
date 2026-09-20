@@ -88,7 +88,7 @@ fun MiniPlayer(
 
     fun settle() {
         if (dragPx > thresholdPx * 0.45f) onCollapse()
-        else scope.launch { progress.animateTo(if (expanded) 0f else 1f, tween(220)) }
+        else scope.launch { progress.animateTo(0f, tween(220)) }
         dragPx = 0f
     }
 
@@ -108,19 +108,21 @@ fun MiniPlayer(
                 .height(h)
                 .clip(RoundedCornerShape(corner))
                 .background(lerpColor(SamsungBlueDark, Color(0xFF2A2A32), p))
-                .clickable(enabled = p > 0.95f) { onExpand() }
-                .pointerInput(Unit) {
-                    detectHorizontalDragGestures(
-                        onDragEnd = { settle() },
-                        onDragCancel = { dragPx = 0f; scope.launch { progress.animateTo(if (expanded) 0f else 1f, tween(220)) } },
-                    ) { change, amount ->
-                        change.consume()
-                        dragPx = (dragPx + amount).coerceAtLeast(0f)
-                        val target = if (expanded) dragPx / thresholdPx
-                        else (1f - dragPx / thresholdPx).coerceAtLeast(0f)
-                        scope.launch {
-                            progress.stop()
-                            progress.snapTo(target.coerceIn(0f, 1f))
+                // 收起态只装点击（同节点混装拖拽检测会吃掉带抖动的 tap）；
+                // 展开态只装右滑手势。pointerInput(expanded) 保证回调拿到最新状态。
+                .then(if (!expanded) Modifier.clickable { onExpand() } else Modifier)
+                .pointerInput(expanded) {
+                    if (expanded) {
+                        detectHorizontalDragGestures(
+                            onDragEnd = { settle() },
+                            onDragCancel = { dragPx = 0f; scope.launch { progress.animateTo(0f, tween(220)) } },
+                        ) { change, amount ->
+                            change.consume()
+                            dragPx = (dragPx + amount).coerceAtLeast(0f)
+                            scope.launch {
+                                progress.stop()
+                                progress.snapTo((dragPx / thresholdPx).coerceIn(0f, 1f))
+                            }
                         }
                     }
                 },
@@ -180,42 +182,49 @@ fun MiniPlayer(
                     )
                 }
                 Spacer(Modifier.weight(1f))
-                Column(
-                    modifier = Modifier.padding(end = 10.dp),
-                    horizontalAlignment = Alignment.End,
+                Row(
+                    Modifier
+                        .clickable { onOpenPlayer() }
+                        .padding(end = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text(
-                        title,
-                        color = Color.White,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        maxLines = 1,
-                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                        textAlign = TextAlign.End,
-                    )
-                    Text(
-                        artist,
-                        color = Color.White.copy(alpha = 0.65f),
-                        fontSize = 11.sp,
-                        maxLines = 1,
-                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                        textAlign = TextAlign.End,
+                    Column(
+                        modifier = Modifier.padding(end = 10.dp),
+                        horizontalAlignment = Alignment.End,
+                    ) {
+                        Text(
+                            title,
+                            color = Color.White,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                            textAlign = TextAlign.End,
+                        )
+                        Text(
+                            artist,
+                            color = Color.White.copy(alpha = 0.65f),
+                            fontSize = 11.sp,
+                            maxLines = 1,
+                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                            textAlign = TextAlign.End,
+                        )
+                    }
+                    AlbumArt(
+                        path = songPath,
+                        modifier = Modifier
+                            .size(44.dp)
+                            .clip(RoundedCornerShape(8.dp)),
+                        placeholder = { m ->
+                            Box(
+                                m.clip(RoundedCornerShape(8.dp)).background(Color(0xFF5C64B8)),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Icon(Icons.Filled.MusicNote, contentDescription = null, tint = Color.White.copy(alpha = 0.7f))
+                            }
+                        },
                     )
                 }
-                AlbumArt(
-                    path = songPath,
-                    modifier = Modifier
-                        .size(44.dp)
-                        .clip(RoundedCornerShape(8.dp)),
-                    placeholder = { m ->
-                        Box(
-                            m.clip(RoundedCornerShape(8.dp)).background(Color(0xFF5C64B8)),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Icon(Icons.Filled.MusicNote, contentDescription = null, tint = Color.White.copy(alpha = 0.7f))
-                        }
-                    },
-                )
             }
             // 唱片面：随 p 渐显，与条内封面位置重合，形成“封面被圆环吞入”的连续感
             Box(Modifier.fillMaxSize().alpha(p), contentAlignment = Alignment.Center) {
