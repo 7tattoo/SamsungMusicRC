@@ -81,6 +81,16 @@ class PlayerUiState(
         })
     }
 
+    /** 外部强制重读：自动续播等异步路径完成后由 Activity 调用，消除任何错过的事件 */
+    fun resync() {
+        val c = controller ?: return
+        val before = isPlaying
+        syncFrom(c)
+        if (before != isPlaying) {
+            CrashLogger.trace("ui resync isPlaying=$before -> $isPlaying")
+        }
+    }
+
     private fun syncFrom(c: MediaController) {
         isPlaying = c.isPlaying
         durationMs = c.duration.takeIf { it != C.TIME_UNSET } ?: 0L
