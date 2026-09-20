@@ -45,7 +45,7 @@ class LibraryRepository private constructor(context: Context) {
                     songs = songs,
                 )
             }
-            .sortedWith(compareBy(collator) { it.name })
+            .sortedByMixedKey { it.name }
     }
 
     fun observeFolder(path: String): Flow<List<Song>> =
@@ -123,12 +123,42 @@ fun SongEntity.toSong() = Song(
     year = year,
 )
 
+/** Han→拉丁（拼音）转写器，懒加载。android.icu 自 API 24 起可用；
+ *  多数设备自带 Han-Latin 规则数据；不可用时为 null，回退到 Collator。 */
+private val hanLatin: android.icu.text.Transliterator? by lazy {
+    runCatching {
+        android.icu.text.Transliterator.getInstance("Han-Latin; Latin-ASCII")
+    }.getOrNull()
+}
+
+/** 取文本首字的拼音首字母（A-Z），用于中英混合排序与 A-Z 侧栏定位。
+ *  拉丁字母/数字原样；中文用 ICU Han-Latin 转写后取首个 ASCII 字母。
+ *  不依赖 java.text.Collator：实测 Locale.CHINA Collator 在当前运行时
+ *  不按拼音排序，CJK 一律落在 'z' 之后，导致中文条目全部挤到末尾。 */
+fun pinyinInitial(text: String): Char {
+    val t = text.trim()
+    val first = t.firstOrNull() ?: return '#'
+    val upper = first.uppercaseChar()
+    if (upper in 'A'..'Z') return upper
+    if (first.isDigit()) return '#'
+    val tl = hanLatin
+    if (tl != null) {
+        val py = runCatching { tl.transliterate(first.toString()) }.getOrNull() ?: ""
+        py.firstOrNull { it.uppercaseChar() in 'A'..'Z' }?.uppercaseChar()?.let { return it }
+    }
+    // 回退：Collator 区间比较（部分运行时可按拼音）
+    return try {
+        val c = java.text.Collator.getInstance(java.util.Locale.CHINA)
+        var last = 'a'
+        for (l in 'a'..'z') { if (c.compare(t, l.toString()) >= 0) last = l else break }
+        last.uppercaseChar()
+    } catch (e: Throwable) { '#' }
+}
+
 /**
  * 中英文混拼排序键（拼音字母段交错）：
- * 中文条目把首字拼音首字母前缀到排序键（ai Ren → "aai Ren"的键序），
- * 使 哀人 排进 A 段、与 animal 交错；拉丁/数字条目保持原样。
- * 拼音首字母用 Locale.CHINA Collator 与 a-z 逐一区间比较求得（与
- * letterOfText 同一套规则，字母条定位与排序永远一致）。
+ * 中文条目把首字拼音首字母前缀到排序键，使 哀人 排进 A 段、与 animal 交错；
+ * 拉丁/数字条目保持原样。拼音首字母由 pinyinInitial() 求得（ICU 转写）。
  */
 fun mixedSortKey(s: String, collator: Collator): java.text.CollationKey {
     val t = s.trim()
@@ -137,12 +167,10 @@ fun mixedSortKey(s: String, collator: Collator): java.text.CollationKey {
     if (c0.isDigit()) return collator.getCollationKey("0$t") // 数字段排最前
     val upper = c0.uppercaseChar()
     if (upper in 'A'..'Z') return collator.getCollationKey(t)
-    // 中文（或其他非拉丁）：求拼音首字母 l，前缀后参与统一字母序
-    var last = 'a'
-    for (l in 'a'..'z') {
-        if (collator.compare(t, l.toString()) >= 0) last = l else break
-    }
-    return collator.getCollationKey(last + t)
+    // 中文等非拉丁：取拼音首字母前缀，参与统一字母序
+    val pi = pinyinInitial(t)
+    return if (pi in 'A'..'Z') collator.getCollationKey("${pi.lowercaseChar()}$t")
+    else collator.getCollationKey(t)
 }
 
 /** 中英混拼排序：预计算 CollationKey 再排序，避免比较时重复求键 */
@@ -182,7 +210,7 @@ fun List<Song>.groupedAlbums(): List<AlbumGroup> =
                 songs = songs.sortedBy { it.trackNumber },
             )
         }
-        .sortedWith(compareBy(LibraryRepository.collator) { it.name })
+        .sortedByMixedKey { it.name }
 
 fun List<Song>.groupedArtists(): List<ArtistGroup> =
     groupBy { it.artist }
@@ -192,10 +220,10 @@ fun List<Song>.groupedArtists(): List<ArtistGroup> =
                 albumCount = songs.groupBy { it.album }.size,
                 songCount = songs.size,
                 coverPath = songs.firstOrNull()?.path ?: "",
-                songs = songs.sortedWith(compareBy(LibraryRepository.collator) { it.title }),
+                songs = songs.sortedByMixedKey { it.title },
             )
         }
-        .sortedWith(compareBy(LibraryRepository.collator) { it.name })
+        .sortedByMixedKey { it.name }
 
 data class AlbumGroup(
     val name: String,
