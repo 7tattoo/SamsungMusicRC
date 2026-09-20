@@ -91,19 +91,15 @@ fun AzScrollbar(
             },
         contentAlignment = Alignment.CenterEnd,
     ) {
-        // 半透明胶囊蒙版（对照 Samsung Music）：字母条垫一条浅色圆角底，
-        // 不再直接悬浮在内容上；触摸区域仍是整个 28dp 宽的 Box。
-        Box(
-            Modifier
-                .fillMaxHeight()
-                .padding(vertical = 10.dp)
-                .width(26.dp)
-                .clip(RoundedCornerShape(13.dp))
-                .background(Color(0xFF8A8A94).copy(alpha = 0.12f)),
-        )
+        // 蒙版直接长在字母列上（等宽 26dp + 圆角 + 半透明底）：
+        // 不能用独立的蒙版 Box —— CenterEnd 会把窄字母列贴到屏幕最右缘，
+        // 表现为字母错位/被裁（上一版踩坑）。
         Column(
             modifier = Modifier
+                .width(26.dp)
                 .fillMaxHeight()
+                .clip(RoundedCornerShape(13.dp))
+                .background(Color(0xFF8A8A94).copy(alpha = 0.12f))
                 .clipToBounds()
                 .padding(vertical = 4.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
