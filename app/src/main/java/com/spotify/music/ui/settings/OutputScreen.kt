@@ -253,9 +253,9 @@ fun OutputScreen(onBack: () -> Unit, onOutputChanged: () -> Unit = {}) {
         SectionCard {
             InfoLine(stringResource(R.string.equalizer), if (EqState.enabled) stringResource(R.string.on_state) else stringResource(R.string.off))
             Divider()
-            InfoLine(stringResource(R.string.bass_boost), if (EqState.bassBoostDb > 0f) "+%.0f dB".format(EqState.bassBoostDb) else stringResource(R.string.off))
+            InfoLine(stringResource(R.string.bass_boost), if (EqState.bassBoostDb != 0f) "%+.0f dB".format(EqState.bassBoostDb) else stringResource(R.string.off))
             Divider()
-            InfoLine(stringResource(R.string.treble_boost), if (EqState.trebleDb > 0f) "+%.0f dB".format(EqState.trebleDb) else stringResource(R.string.off))
+            InfoLine(stringResource(R.string.treble_boost), if (EqState.trebleDb != 0f) "%+.0f dB".format(EqState.trebleDb) else stringResource(R.string.off))
             Divider()
             InfoLine(stringResource(R.string.surround), if (EqState.width > 0f) "%.0f%%".format(EqState.width * 100) else stringResource(R.string.off))
             Divider()
