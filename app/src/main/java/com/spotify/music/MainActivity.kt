@@ -13,43 +13,19 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.Icon
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.lifecycle.lifecycleScope
 import com.spotify.music.data.LibraryRepository
 import com.spotify.music.data.SettingsRepository
@@ -57,6 +33,7 @@ import com.spotify.music.playback.PlaybackClient
 import com.spotify.music.ui.PlayerUiState
 import com.spotify.music.ui.components.SwipeBackLayout
 import com.spotify.music.ui.library.LibraryScreen
+import com.spotify.music.ui.onboarding.OnboardingScreen
 import com.spotify.music.ui.player.PlayerScreen
 import com.spotify.music.ui.settings.HiddenFoldersScreen
 import com.spotify.music.ui.settings.OutputScreen
@@ -64,7 +41,6 @@ import com.spotify.music.ui.settings.ScanDirsScreen
 import com.spotify.music.ui.settings.SettingsScreen
 import com.spotify.music.ui.settings.EqualizerScreen
 import com.spotify.music.ui.theme.LibraryBg
-import com.spotify.music.ui.theme.SamsungBlue
 import com.spotify.music.ui.theme.SamsungMusicTheme
 import com.spotify.music.util.CrashLogger
 import kotlinx.coroutines.Dispatchers
@@ -130,14 +106,18 @@ class MainActivity : androidx.activity.ComponentActivity() {
 
     override fun onCreate(savedInstanceState: android.os.Bundle?) {
         super.onCreate(savedInstanceState)
-        requestRuntimePermissions()
+        // 已过引导（老用户升级）才在启动时直接申请；新装用户由引导页「继续」触发，
+        // 避免系统权限弹窗盖在引导页上面
+        if (settings.onboardingDone) requestRuntimePermissions()
         setContent {
             var darkMode by remember { mutableStateOf(settings.darkMode) }
             var route by remember { mutableStateOf(Route.LIBRARY) }
             var browse by remember { mutableStateOf<Pair<String, String>?>(null) }
             // 均衡器页返回时该回哪（播放页 or 设置页）
             var equalizerReturn by remember { mutableStateOf(Route.SETTINGS) }
-            var permissionGranted by remember { mutableStateOf(!needsAllFilesPermission()) }
+            var onboardingDone by remember { mutableStateOf(settings.onboardingDone) }
+            // 引导页/设置页添加扫描目录后，用于刷新引导页的目录列表
+            var scanDirsVersion by remember { mutableIntStateOf(0) }
             // 崩溃/终止原因只静默写入文件（应用私有目录），不再弹窗打扰使用
             // 每 5 秒采一次内存水位：崩溃后能看出内存曲线是不是一路飙到顶
             LaunchedEffect(Unit) {
@@ -192,6 +172,7 @@ class MainActivity : androidx.activity.ComponentActivity() {
                         val cur = settings.scanDirs.toMutableSet()
                         cur.add(path)
                         settings.scanDirs = cur
+                        scanDirsVersion++
                         Toast.makeText(this, "已添加扫描目录：$path", Toast.LENGTH_SHORT).show()
                         lifecycleScope.launch(Dispatchers.IO) { library.rescan() }
                     } else {
@@ -202,10 +183,22 @@ class MainActivity : androidx.activity.ComponentActivity() {
 
             SamsungMusicTheme(darkModeSetting = darkMode) {
                 Box(Modifier.fillMaxSize().background(LibraryBg)) {
-                    if (!permissionGranted) {
-                        PermissionPrompt(
-                            onGrant = { requestAllFilesAccess() },
-                            onContinue = { permissionGranted = true },
+                    if (!onboardingDone) {
+                        OnboardingScreen(
+                            settings = settings,
+                            scanDirsVersion = scanDirsVersion,
+                            onPickDirectory = { treeLauncher.launch(null) },
+                            onGrantAllFiles = { requestAllFilesAccess() },
+                            onContinue = {
+                                requestRuntimePermissions()
+                                settings.onboardingDone = true
+                                onboardingDone = true
+                                // 引导完成立即做首次扫描（此时媒体权限已请求）
+                                lifecycleScope.launch(Dispatchers.IO) {
+                                    runCatching { library.rescan() }
+                                    settings.firstScanDone = true
+                                }
+                            },
                         )
                     } else {
                         // 左边缘侧滑返回（所有子页面生效）
@@ -277,18 +270,6 @@ class MainActivity : androidx.activity.ComponentActivity() {
                     }
                 }
             }
-
-            // 从权限设置页返回后重新评估
-            LaunchedEffect(Unit) {
-                while (true) {
-                    kotlinx.coroutines.delay(800)
-                    if (needsAllFilesPermission() && !Environment.isExternalStorageManager()) {
-                        // 仍被拒绝：保持提示，但用户可点「继续」绕过
-                    } else if (permissionGranted != !needsAllFilesPermission()) {
-                        permissionGranted = !needsAllFilesPermission()
-                    }
-                }
-            }
         }
     }
 
@@ -326,56 +307,6 @@ class MainActivity : androidx.activity.ComponentActivity() {
         lifecycleScope.launch(Dispatchers.IO) {
             runCatching { library.rescan() }
             settings.firstScanDone = true
-        }
-    }
-}
-
-/**
- * 首次启动的「所有文件管理权限」引导页。
- * 用户可授予（推荐的自定义扫描目录体验）或点击「继续」在受限权限下使用默认 Music 目录。
- */
-@Composable
-private fun PermissionPrompt(onGrant: () -> Unit, onContinue: () -> Unit) {
-    val context = LocalContext.current
-    Column(
-        Modifier
-            .fillMaxSize()
-            .background(LibraryBg)
-            .statusBarsPadding()
-            .padding(24.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
-    ) {
-        Icon(
-            Icons.Filled.Folder,
-            contentDescription = null,
-            tint = SamsungBlue,
-            modifier = Modifier.size(72.dp),
-        )
-        Text(
-            "允许访问音乐文件",
-            fontSize = 22.sp,
-            fontWeight = FontWeight.Bold,
-            color = SamsungBlue,
-            modifier = Modifier.padding(top = 16.dp),
-        )
-        Text(
-            "为了扫描任意文件夹下的本地音乐与歌词，建议授予「所有文件管理权限」。\n你也可以稍后在设置中更改。",
-            fontSize = 14.sp,
-            color = Color(0xFF83838C),
-            textAlign = TextAlign.Center,
-            lineHeight = 20.sp,
-            modifier = Modifier.padding(top = 12.dp, bottom = 28.dp),
-        )
-        Button(
-            onClick = onGrant,
-            shape = RoundedCornerShape(24.dp),
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Text("授予权限", fontSize = 16.sp)
-        }
-        TextButton(onClick = onContinue, modifier = Modifier.padding(top = 8.dp)) {
-            Text("继续（仅默认目录）", color = SamsungBlue)
         }
     }
 }

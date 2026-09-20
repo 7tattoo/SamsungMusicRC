@@ -229,6 +229,14 @@ class SettingsRepository(context: Context) {
         get() = prefs.getBoolean(KEY_FIRST_SCAN, false)
         set(value) = prefs.edit().putBoolean(KEY_FIRST_SCAN, value).apply()
 
+    /**
+     * 首次启动引导页是否已完成。
+     * 老用户升级（已有首次扫描记录）直接视为完成，不再打扰；仅全新安装显示引导页。
+     */
+    var onboardingDone: Boolean
+        get() = prefs.getBoolean(KEY_ONBOARDING_DONE, prefs.contains(KEY_FIRST_SCAN))
+        set(value) = prefs.edit().putBoolean(KEY_ONBOARDING_DONE, value).apply()
+
     companion object {
         // 默认扫描整个存储根目录（递归含子文件夹），这样 Music / HIRES / Download 等
         // 任意位置的音频都能被发现；用户可在「隐藏文件夹」里剔除不需要的目录。
@@ -255,6 +263,7 @@ class SettingsRepository(context: Context) {
         private const val KEY_LAST_QUEUE_PLAYING = "last_queue_playing"
         private const val KEY_SORT = "sort_mode"
         private const val KEY_FIRST_SCAN = "first_scan_done"
+        private const val KEY_ONBOARDING_DONE = "onboarding_done"
         private const val KEY_EQ_ENABLED = "eq_enabled"
         private const val KEY_EQ_PREAMP = "eq_preamp_db"
         private const val KEY_EQ_BASS = "eq_bass_db"

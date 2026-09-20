@@ -63,6 +63,7 @@ import com.spotify.music.data.groupedArtists
 import com.spotify.music.data.sortedByMode
 import com.spotify.music.playback.PlaybackClient
 import com.spotify.music.ui.components.AlbumArt
+import com.spotify.music.ui.components.AzBubble
 import com.spotify.music.ui.components.AzScrollbar
 import com.spotify.music.ui.components.SortIcon
 import com.spotify.music.ui.components.letterOfText
@@ -336,6 +337,7 @@ fun SongsTab(
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
     var showSortMenu by remember { mutableStateOf(false) }
+    var hoverLetter by remember { mutableStateOf<Char?>(null) }
 
     Column(Modifier.fillMaxSize()) {
         // 排序条
@@ -439,10 +441,15 @@ fun SongsTab(
                 AzScrollbar(
                     modifier = Modifier.align(Alignment.CenterEnd),
                     enabledLetters = sorted.groupBy { letterOfText(it.title) }.keys,
+                    onHoverLetter = { hoverLetter = it },
                 ) { letter ->
                     val idx = sorted.indexOfFirst { letterOfText(it.title) == letter }
                     if (idx >= 0) scope.launch { listState.scrollToItem(idx.coerceAtLeast(0)) }
                 }
+            }
+            val hover = hoverLetter
+            if (hover != null) {
+                AzBubble(hover, Modifier.align(Alignment.Center))
             }
         }
     }
@@ -768,6 +775,7 @@ private fun FoldersTab(
     var expanded by remember { mutableStateOf<String?>(null) }
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
+    var hoverLetter by remember { mutableStateOf<Char?>(null) }
 
     Box(Modifier.fillMaxSize()) {
         LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
@@ -823,9 +831,14 @@ private fun FoldersTab(
         AzScrollbar(
             modifier = Modifier.align(Alignment.CenterEnd),
             enabledLetters = folders.groupBy { letterOfText(it.name) }.keys,
+            onHoverLetter = { hoverLetter = it },
         ) { letter ->
             val idx = folders.indexOfFirst { letterOfText(it.name) == letter }
             if (idx >= 0) scope.launch { listState.scrollToItem(idx) }
+        }
+        val hover = hoverLetter
+        if (hover != null) {
+            AzBubble(hover, Modifier.align(Alignment.Center))
         }
     }
 }
