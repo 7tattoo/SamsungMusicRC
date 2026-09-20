@@ -139,6 +139,30 @@ class SettingsRepository(context: Context) {
         set(value) = prefs.edit().putLong(KEY_LAST_QUEUE_POS, value).apply()
 
     /**
+     * 恢复快照原子写：队列/曲目/进度/意图用同一个 editor 提交。
+     * 旧实现分 4 次 apply()，强杀打断时会落一半（老队列+新 intent 之类的混合态），
+     * 表现为「重启后回到第一首或更早的某次快照」。
+     */
+    fun saveLastQueueAtomic(paths: List<String>, idx: Int, pos: Long, wasPlaying: Boolean) {
+        prefs.edit()
+            .putString(KEY_LAST_QUEUE, JSONArray(paths).toString())
+            .putInt(KEY_LAST_QUEUE_IDX, idx)
+            .putLong(KEY_LAST_QUEUE_POS, pos)
+            .putBoolean(KEY_LAST_QUEUE_PLAYING, wasPlaying)
+            .apply()
+    }
+
+    /** 临终同步版：commit() 阻塞写完才返回，强杀前数据已在磁盘上。 */
+    fun saveLastQueueAtomicBlocking(paths: List<String>, idx: Int, pos: Long, wasPlaying: Boolean) {
+        prefs.edit()
+            .putString(KEY_LAST_QUEUE, JSONArray(paths).toString())
+            .putInt(KEY_LAST_QUEUE_IDX, idx)
+            .putLong(KEY_LAST_QUEUE_POS, pos)
+            .putBoolean(KEY_LAST_QUEUE_PLAYING, wasPlaying)
+            .commit()
+    }
+
+    /**
      * 上次退出的播放意图（播放中 / 已暂停）。
      *
      * 队列与进度之外必须单独记一个「是否在播」：进程被杀后重启若不看这个标记，

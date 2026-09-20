@@ -835,23 +835,41 @@ class PlaybackService : MediaLibraryService() {
             // playWhenReady 就是「用户是否想继续播」的意图，必须和队列一起落盘
             val wasPlaying = player.playWhenReady
             val prev = settings.lastQueuePlaying
-            serviceScope.launch(Dispatchers.IO) {
-                runCatching {
-                    settings.lastQueuePaths = paths
-                    settings.lastQueueIndex = idx
-                    settings.lastQueuePositionMs = pos
-                    settings.lastQueuePlaying = wasPlaying
-                }.onFailure { CrashLogger.log(it, "saveLastQueue/write") }
-            }
+            // 内存快照同步更新（调用方线程）；真正写盘走单一 editor 原子提交。
+            // 旧实现把落盘丢进 Dispatchers.IO 协程：强杀（single-cleaner）毫秒级
+            // 到来时协程可能还没跑 —— 最后一次保存整个丢失，恢复出陈旧队列
+            //（trace_8：播放中杀 → items=150 idx=0 pos=0 的老快照 + 新 intent）。
+            lastSnapshot = QueueSnapshot(paths, idx, pos, wasPlaying)
+            settings.saveLastQueueAtomic(paths, idx, pos, wasPlaying)
             if (prev != wasPlaying) {
                 CrashLogger.trace("saveLastQueue intent $prev -> $wasPlaying")
             }
         }.onFailure { CrashLogger.log(it, "saveLastQueue") }
     }
 
+    /** 进程临终同步落盘：onTaskRemoved / onDestroy 里调用，绝不走协程。 */
+    private fun flushLastQueueSync() {
+        runCatching {
+            val snap = lastSnapshot ?: return
+            // 队列有变化时以播放器当前状态为准（快照可能落后于最后一次转场）
+            val paths = snap.paths
+            settings.saveLastQueueAtomicBlocking(
+                paths,
+                player.currentMediaItemIndex.coerceIn(0, paths.size - 1),
+                player.currentPosition.coerceAtLeast(0L),
+                player.playWhenReady,
+            )
+        }.onFailure { CrashLogger.log(it, "flushLastQueueSync") }
+    }
+
+    private data class QueueSnapshot(val paths: List<String>, val idx: Int, val pos: Long, val wasPlaying: Boolean)
+
+    @Volatile private var lastSnapshot: QueueSnapshot? = null
+
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaLibrarySession? = session
 
     override fun onDestroy() {
+        flushLastQueueSync()
         saveLastQueue(force = true)
         sleepTimerJob?.cancel()
         crossfadeJob?.cancel()
@@ -867,7 +885,9 @@ class PlaybackService : MediaLibraryService() {
 
     @Deprecated("Deprecated in Java")
     override fun onTaskRemoved(rootIntent: Intent?) {
-        // 用户划掉后台：先把当前进度存下来再决定要不要停服务
+        // 用户划掉后台：先把当前进度存下来再决定要不要停服务。
+        // 必须同步写：强杀紧接着就来，异步协程来不及跑（trace_8 实锤丢保存）。
+        flushLastQueueSync()
         saveLastQueue(force = true)
         CrashLogger.trace(
             "onTaskRemoved playWhenReady=${player.playWhenReady} intent=${if (player.playWhenReady) "playing" else "paused"}"
