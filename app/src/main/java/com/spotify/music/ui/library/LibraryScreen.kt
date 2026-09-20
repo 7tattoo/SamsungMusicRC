@@ -481,7 +481,7 @@ fun SongRow(
                 onOpenPlayer?.invoke()
             }
             // Keep the MoreVert target away from the right-side A-Z rail.
-            .padding(start = 14.dp, end = 46.dp, top = 8.dp, bottom = 8.dp),
+            .padding(start = 14.dp, end = 34.dp, top = 8.dp, bottom = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         AlbumArt(

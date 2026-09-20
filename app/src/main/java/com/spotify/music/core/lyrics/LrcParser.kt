@@ -77,9 +77,10 @@ object LrcParser {
                 return@forEach
             }
             hasTimestamps = true
-            val text = WORD_TIME_REGEX
-                .replace(line.substring(times.last().range.last + 1), "")
-                .trim()
+            // 歌词文本提取：剥掉行内所有时间戳取剩余文本。不能用「最后一个时间戳
+            // 之后的内容」——网易云等工具导出的行是 [时间]歌词[下一句时间] 排布，
+            // 歌词夹在两个时间戳中间，按旧取法得到空串，整首被丢成「暂无歌词」。
+            val text = WORD_TIME_REGEX.replace(stampFree(line), "").trim()
             if (text.isEmpty()) return@forEach
             times.forEach { m ->
                 val min = m.groupValues[1].toLong().coerceAtMost(5999)
@@ -104,6 +105,10 @@ object LrcParser {
         if (lines.isEmpty()) return Lyrics.EMPTY
         return Lyrics(lines, timed.isNotEmpty())
     }
+
+    /** 剥掉行内所有 [mm:ss(.xx)] 时间戳（歌词夹在时间戳中间的导出格式靠这个取文本） */
+    private fun stampFree(line: String): String =
+        line.replace(Regex("""\[\s*\d{1,3}\s*:\s*\d{1,2}(?:\s*[.:]\s*\d{1,3})?\s*]"""), " ")
 
     /** 二分查找当前进度应显示的行号（无时间戳返回 -1） */
     fun findLineIndex(lyrics: Lyrics, positionMs: Long): Int {

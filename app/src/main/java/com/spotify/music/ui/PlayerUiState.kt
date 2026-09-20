@@ -58,6 +58,7 @@ class PlayerUiState(
         syncFrom(c)
         c.addListener(object : Player.Listener {
             override fun onIsPlayingChanged(isPlaying: Boolean) {
+                CrashLogger.trace("ui onIsPlayingChanged -> $isPlaying")
                 this@PlayerUiState.isPlaying = isPlaying
                 if (!isPlaying) this@PlayerUiState.positionMs = c.currentPosition
             }
@@ -105,7 +106,13 @@ class PlayerUiState(
                 // 状态自愈兜底：进程被杀重启/外部控制器接管等场景下，Listener 可能
                 // 错过 onIsPlayingChanged（控件/播放页卡在旧状态的根源）。轮询回读
                 // 保证 UI 最终一致；isPlaying 相同时 Compose 不会触发重组。
-                if (c.isPlaying != isPlaying) isPlaying = c.isPlaying
+                if (c.isPlaying != isPlaying) {
+                    CrashLogger.trace(
+                        "ui-state heal isPlaying=$isPlaying -> ${c.isPlaying} " +
+                            "pwr=${c.playbackState} listenerMissed=true"
+                    )
+                    isPlaying = c.isPlaying
+                }
             }
             delay(500)
         }
