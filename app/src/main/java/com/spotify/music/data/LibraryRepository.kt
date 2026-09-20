@@ -124,56 +124,47 @@ fun SongEntity.toSong() = Song(
 )
 
 /**
- * 中英文混拼排序键：
- *  - 英文/数字开头 → [0, CollationKey]
- *  - 其他（中文等） → [1, CollationKey]（Locale.CHINA 的 Collator 即拼音序）
- * 效果：英文条目按字母序在前，中文条目按拼音紧随其后；
- * 「animal」与「哀人」都落在 A 段（英文优先于中文）。
- * CollationKey 自身 Comparable，Pair 可直接参与 compareBy。
+ * 中英文混拼排序键（拼音字母段交错）：
+ * 中文条目把首字拼音首字母前缀到排序键（ai Ren → "aai Ren"的键序），
+ * 使 哀人 排进 A 段、与 animal 交错；拉丁/数字条目保持原样。
+ * 拼音首字母用 Locale.CHINA Collator 与 a-z 逐一区间比较求得（与
+ * letterOfText 同一套规则，字母条定位与排序永远一致）。
  */
-fun mixedSortKey(s: String, collator: Collator): Pair<Int, java.text.CollationKey> {
+fun mixedSortKey(s: String, collator: Collator): java.text.CollationKey {
     val t = s.trim()
-    if (t.isEmpty()) return Pair(2, collator.getCollationKey(""))
+    if (t.isEmpty()) return collator.getCollationKey("")
     val c0 = t[0]
+    if (c0.isDigit()) return collator.getCollationKey("0$t") // 数字段排最前
     val upper = c0.uppercaseChar()
-    return if (upper in 'A'..'Z' || c0.isDigit()) {
-        Pair(0, collator.getCollationKey(t))
-    } else {
-        Pair(1, collator.getCollationKey(t))
+    if (upper in 'A'..'Z') return collator.getCollationKey(t)
+    // 中文（或其他非拉丁）：求拼音首字母 l，前缀后参与统一字母序
+    var last = 'a'
+    for (l in 'a'..'z') {
+        if (collator.compare(t, l.toString()) >= 0) last = l else break
     }
+    return collator.getCollationKey(last + t)
 }
 
-/** (组, CollationKey) 的比较器 */
-private fun cmpKey(
-    a: Pair<Int, java.text.CollationKey>,
-    b: Pair<Int, java.text.CollationKey>,
-): Int {
-    val byGroup = a.first.compareTo(b.first)
-    return if (byGroup != 0) byGroup else a.second.compareTo(b.second)
-}
-
-/** 中英混拼排序：预计算 (组, CollationKey) 再排序，避免比较时重复求键 */
+/** 中英混拼排序：预计算 CollationKey 再排序，避免比较时重复求键 */
 fun <T> List<T>.sortedByMixedKey(select: (T) -> String): List<T> {
     val c = LibraryRepository.collator
     return map { it to mixedSortKey(select(it), c) }
-        .sortedWith(Comparator { a, b -> cmpKey(a.second, b.second) })
+        .sortedWith(Comparator { a, b -> a.second.compareTo(b.second) })
         .map { it.first }
 }
 
 fun List<Song>.sortedByMode(mode: String): List<Song> = when (mode) {
     "artist" -> sortedByMixedKey { it.artist }.let { list ->
         // 同歌手内按歌名混拼
-        val c = LibraryRepository.collator
         list.groupBy { it.artist }
             .toList()
-            .sortedWith(Comparator { a, b -> cmpKey(mixedSortKey(a.first, c), mixedSortKey(b.first, c)) })
+            .sortedByMixedKey { it.first }
             .flatMap { (_, songs) -> songs.sortedByMixedKey { it.title } }
     }
     "album" -> sortedByMixedKey { it.album }.let { list ->
-        val c = LibraryRepository.collator
         list.groupBy { it.album }
             .toList()
-            .sortedWith(Comparator { a, b -> cmpKey(mixedSortKey(a.first, c), mixedSortKey(b.first, c)) })
+            .sortedByMixedKey { it.first }
             .flatMap { (_, songs) -> songs.sortedBy { it.trackNumber } }
     }
     "added" -> sortedByDescending { it.lastModified }
