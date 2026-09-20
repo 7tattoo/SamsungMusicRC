@@ -63,7 +63,7 @@ class OboeAudioSink(
     private var stallCount = 0
 
     /** 播放器意图是否为播放。暂停期间禁止一切 stall 触发的流重开（否则暂停会被自己复活）。 */
-    @Volatile private var streamActive = true
+    @Volatile private var streamActive = false
 
     // 暂停诊断：记录暂停瞬间设备已消费的帧数与时刻，下次 play() 时对比，
     // 用于判断「点暂停后音乐还在放」是原生流没停下，还是播放又被人重新拉起。
@@ -140,9 +140,9 @@ class OboeAudioSink(
                 throw AudioSink.ConfigurationException("Unable to open Oboe output stream", inputFormat)
             }
             oboe = output
-            // The sink may receive decoder data before ExoPlayer calls play(). Keep the
-            // stream started so blocking writes can pre-buffer instead of returning 0.
-            output.start()
+            // 流保持未启动：只等 AudioSink.play()（nativeStart）。旧版在这里 start
+            // 以便「预缓冲」，但暂停态下的预热写入会直接出声 —— 恢复队列后 ExoPlayer
+            // 明明是 paused，音乐却已经在放（自动播放 + UI 卡暂停的另一半真相）。
         }
         actualSampleRate = oboe?.outputSampleRate() ?: newSampleRate
         resetPlaybackState()
@@ -286,7 +286,11 @@ class OboeAudioSink(
         inputEnded = false
         frameBase = oboe?.framesRead() ?: 0L
         stallCount = 0
-        streamActive = true
+        // streamActive 不能在这里重置为 true：恢复队列（configure→reset）发生在
+        // ExoPlayer 真正 play() 之前，若此处置 true，暂停态下的预热写入会直接
+        // 走进「已启动」的流出声（trace_7：无 play 命令无 sink play 却在响）。
+        // 活动标志只由 play()/pause() 驱动；换歌等 mid-playback 场景 play() 已
+        // 在播放意图里，状态保持 true 不受影响。
     }
 
     /** Drains any pending output and everything the pipeline can currently produce. */
@@ -437,13 +441,15 @@ class OboeAudioSink(
                 )
                 false
             } else {
-                output.start()
                 oboe = output
                 actualSampleRate = output.outputSampleRate()
                 frameBase = 0L
                 stallCount = 0
+                // 重开只发生在写入路径的播放中（streamActive=true 才会走到 stall），
+                // 按当前意图直接启动，恢复被断掉的输出。
+                if (streamActive) output.start()
                 CrashLogger.trace(
-                    "sink reopened ok rate=$outputSampleRate actualRate=$actualSampleRate api=$audioApi"
+                    "sink reopened ok rate=$outputSampleRate actualRate=$actualSampleRate api=$audioApi started=$streamActive"
                 )
                 true
             }

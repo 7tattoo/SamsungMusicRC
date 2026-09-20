@@ -99,9 +99,10 @@ Java_com_spotify_music_audio_OboeAudioOutput_nativeOpen(
     sink->audioApi = audioApi;
     sink->channelCount = sink->stream->getChannelCount();
     sink->bytesPerFrame = sink->channelCount * bytesPerSample(sink->stream->getFormat());
-    // Start immediately so ExoPlayer can pre-buffer before it calls AudioSink.play().
-    // The old APK's prebuilt library has this behavior too; keep source and packaged ABI aligned.
-    sink->stream->requestStart();
+    // 流保持未启动：启动只由 AudioSink.play() 驱动（nativeStart）。
+    // 旧版这里 requestStart() 让 ExoPlayer「预缓冲」，但代价是暂停态下任何
+    // 预热写入都直接出声 —— 表现为「自动播放但 UI 卡暂停」（trace_7：无 play
+    // 命令、无 sink play、无 stall，ExoPlayer 全程 paused，音乐却在响）。
     return reinterpret_cast<jlong>(sink);
 }
 
