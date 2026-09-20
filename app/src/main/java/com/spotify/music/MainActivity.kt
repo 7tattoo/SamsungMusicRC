@@ -108,6 +108,18 @@ class MainActivity : androidx.activity.ComponentActivity() {
 
     override fun onCreate(savedInstanceState: android.os.Bundle?) {
         super.onCreate(savedInstanceState)
+        // 120Hz 屏上把渲染提到显示模式上限：滚动文字拖影主要来自 60fps 渲染在
+        // OLED 上的余晖（vivo/三星高刷屏尤其明显），刷新率上去后拖影明显减轻
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+            runCatching {
+                val mode = display?.supportedModes?.maxByOrNull { it.refreshRate }
+                if (mode != null) {
+                    window.attributes = window.attributes.apply {
+                        preferredDisplayModeId = mode.modeId
+                    }
+                }
+            }
+        }
         // 已过引导（老用户升级）才在启动时直接申请；新装用户由引导页「继续」触发，
         // 避免系统权限弹窗盖在引导页上面
         if (settings.onboardingDone) requestRuntimePermissions()
