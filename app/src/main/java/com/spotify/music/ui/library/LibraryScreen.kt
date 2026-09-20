@@ -509,8 +509,8 @@ fun SongRow(
                 com.spotify.music.util.CrashLogger.trace("CLICK song playQueue returned")
                 onOpenPlayer?.invoke()
             }
-            // Keep the MoreVert target away from the right-side A-Z rail.
-            .padding(start = 14.dp, end = 34.dp, top = 8.dp, bottom = 8.dp),
+            // 间距对照 Samsung Music 参考截图：... 右缘距屏幕右缘约 40dp（视觉空隙约 14dp）。
+            .padding(start = 14.dp, end = 40.dp, top = 8.dp, bottom = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         AlbumArt(
