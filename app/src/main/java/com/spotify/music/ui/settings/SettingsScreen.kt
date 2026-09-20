@@ -283,6 +283,7 @@ fun SettingsScreen(
                 Text(
                     aboutUrl,
                     fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold,
                     color = SamsungBlue,
                     modifier = Modifier.clickable {
                         runCatching {
