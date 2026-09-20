@@ -108,9 +108,8 @@ fun MiniPlayer(
                 .height(h)
                 .clip(RoundedCornerShape(corner))
                 .background(lerpColor(SamsungBlueDark, Color(0xFF2A2A32), p))
-                // 收起态只装点击（同节点混装拖拽检测会吃掉带抖动的 tap）；
-                // 展开态只装右滑手势。pointerInput(expanded) 保证回调拿到最新状态。
-                .then(if (!expanded) Modifier.clickable { onExpand() } else Modifier)
+                // 展开态装右滑手势；收起态点击由外层覆盖层处理（见下）。
+                // pointerInput(expanded) 保证回调拿到最新状态。
                 .pointerInput(expanded) {
                     if (expanded) {
                         detectHorizontalDragGestures(
@@ -128,8 +127,9 @@ fun MiniPlayer(
                 },
             contentAlignment = Alignment.CenterEnd,
         ) {
-            // 展开内容：固定全宽、右缘对齐容器，容器收窄时左端（控制按钮）先被裁掉
-            Row(
+            // 展开内容：固定全宽、右缘对齐容器，容器收窄时左端（控制按钮）先被裁掉。
+            // p≥1 时完全不组合：alpha(0f) 不阻断命中测试，幽灵控件会拦走唱片上的点击。
+            if (p < 0.999f) Row(
                 Modifier
                     .width(barW)
                     .fillMaxHeight()
@@ -227,7 +227,7 @@ fun MiniPlayer(
                 }
             }
             // 唱片面：随 p 渐显，与条内封面位置重合，形成“封面被圆环吞入”的连续感
-            Box(Modifier.fillMaxSize().alpha(p), contentAlignment = Alignment.Center) {
+            if (p > 0.001f) Box(Modifier.fillMaxSize().alpha(p), contentAlignment = Alignment.Center) {
                 AlbumArt(
                     path = songPath,
                     modifier = Modifier
@@ -249,6 +249,8 @@ fun MiniPlayer(
                         .background(Color(0xFF2A2A32)),
                 )
             }
+            // 收起态点击层：52dp 方形命中区，接管“点唱片展开”
+            if (p > 0.999f) Box(Modifier.fillMaxSize().clickable { onExpand() })
         }
     }
 }
