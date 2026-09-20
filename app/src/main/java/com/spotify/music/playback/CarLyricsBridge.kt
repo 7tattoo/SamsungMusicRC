@@ -140,13 +140,18 @@ object CarLyricsBridge {
             if (l.isEmpty() || meta.matches(l)) return@forEach
             val stamps = stamp.findAll(l).toList()
             if (stamps.isEmpty()) return@forEach
-            val text = word.replace(l.substring(stamps.last().range.last + 1), "").trim()
+            // 歌词可能是“[当前时间]文本[下一句时间]”格式；必须剥掉行内全部
+            // 方括号时间戳后再取文本，不能只取最后一个时间戳之后的内容。
+            val text = word.replace(
+                l.replace(stamp, " "),
+                "",
+            ).trim()
             if (text.isEmpty()) return@forEach
             stamps.forEach { m ->
                 val min = m.groupValues[1].toLong()
                 val sec = m.groupValues[2].toLong()
                 val f = m.groupValues[3]
-                val ms = when (f.length) { 0 -> 0L; 1 -> f.toLong() * 100; 2 -> f.toLong() * 10; else -> f.take(3).toLong() / 10 }
+                val ms = when (f.length) { 0 -> 0L; 1 -> f.toLong() * 100; 2 -> f.toLong() * 10; else -> f.take(3).toLong() }
                 lines.add(Line(min * 60_000 + sec * 1_000 + ms, text))
             }
         }
@@ -166,7 +171,9 @@ object CarLyricsBridge {
     fun atomicExtras(mediaId: String?, lyric: String?): Bundle = Bundle().apply {
         putString(KEY_MIX_ACTION, ACTION_LRC_CHANGE)
         putString(KEY_MIX_MEDIA_ID, mediaId ?: "")
-        putString(KEY_MIX_LYRIC, lyric ?: "")
+        // 原子/joviincar 也可能整行渲染歌词文本；统一发送规范化 LRC，
+        // 避免 “[当前时间]文本[下一句时间]” 的下一个时间戳漏进车机文字。
+        putString(KEY_MIX_LYRIC, canonicalLrc(lyric) ?: lyric.orEmpty())
     }
 
     /** 是否需要 25s 兜底重发 */
