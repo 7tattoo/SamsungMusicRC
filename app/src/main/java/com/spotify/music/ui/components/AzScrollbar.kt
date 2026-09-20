@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -90,6 +91,16 @@ fun AzScrollbar(
             },
         contentAlignment = Alignment.CenterEnd,
     ) {
+        // 半透明胶囊蒙版（对照 Samsung Music）：字母条垫一条浅色圆角底，
+        // 不再直接悬浮在内容上；触摸区域仍是整个 28dp 宽的 Box。
+        Box(
+            Modifier
+                .fillMaxHeight()
+                .padding(vertical = 10.dp)
+                .width(26.dp)
+                .clip(RoundedCornerShape(13.dp))
+                .background(Color(0xFF8A8A94).copy(alpha = 0.12f)),
+        )
         Column(
             modifier = Modifier
                 .fillMaxHeight()
