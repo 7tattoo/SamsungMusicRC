@@ -2,6 +2,7 @@ package com.spotify.music.ui.components
 
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -42,6 +43,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp as lerpColor
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
@@ -226,28 +228,45 @@ fun MiniPlayer(
                     )
                 }
             }
-            // 唱片面：随 p 渐显，与条内封面位置重合，形成“封面被圆环吞入”的连续感
-            if (p > 0.001f) Box(Modifier.fillMaxSize().alpha(p), contentAlignment = Alignment.Center) {
-                AlbumArt(
-                    path = songPath,
-                    modifier = Modifier
-                        .size(42.dp)
-                        .clip(CircleShape),
-                    placeholder = { m ->
-                        Box(
-                            m.clip(CircleShape).background(Color(0xFF5C64B8)),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Icon(Icons.Filled.MusicNote, contentDescription = null, tint = Color.White.copy(alpha = 0.7f))
-                        }
-                    },
-                )
-                Box(
-                    Modifier
-                        .size(8.dp)
-                        .clip(CircleShape)
-                        .background(Color(0xFF2A2A32)),
-                )
+            // 唱片面：播放时封面慢速连续旋转，暂停时停在当前角度；外环和中心孔不动。
+            if (p > 0.001f) {
+                val rotationAnim = remember(songPath) { Animatable(0f) }
+                LaunchedEffect(isPlaying, songPath) {
+                    while (isPlaying) {
+                        val start = rotationAnim.value
+                        rotationAnim.animateTo(
+                            targetValue = start + 360f,
+                            animationSpec = tween(8000, easing = LinearEasing),
+                        )
+                    }
+                }
+                Box(Modifier.fillMaxSize().alpha(p), contentAlignment = Alignment.Center) {
+                    Box(
+                        Modifier
+                            .size(42.dp)
+                            .graphicsLayer { rotationZ = rotationAnim.value }
+                            .clip(CircleShape),
+                    ) {
+                        AlbumArt(
+                            path = songPath,
+                            modifier = Modifier.fillMaxSize(),
+                            placeholder = { m ->
+                                Box(
+                                    m.clip(CircleShape).background(Color(0xFF5C64B8)),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    Icon(Icons.Filled.MusicNote, contentDescription = null, tint = Color.White.copy(alpha = 0.7f))
+                                }
+                            },
+                        )
+                    }
+                    Box(
+                        Modifier
+                            .size(8.dp)
+                            .clip(CircleShape)
+                            .background(Color(0xFF2A2A32)),
+                    )
+                }
             }
             // 收起态点击层：52dp 方形命中区，接管“点唱片展开”
             if (p > 0.999f) Box(Modifier.fillMaxSize().clickable { onExpand() })
