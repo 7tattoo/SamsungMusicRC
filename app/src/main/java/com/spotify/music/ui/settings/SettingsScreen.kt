@@ -274,24 +274,25 @@ fun SettingsScreen(
         // ── 关于 ──
         SectionLabel(stringResource(R.string.about))
         val aboutUrl = stringResource(R.string.about_github_url)
-        Column(
-            Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 6.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            Text(
-                aboutUrl,
-                fontSize = 13.sp,
-                color = SamsungBlue,
-                modifier = Modifier.clickable {
-                    runCatching {
-                        context.startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse(aboutUrl)))
-                    }
-                },
-            )
-            Spacer(Modifier.height(6.dp))
-            Text(stringResource(R.string.about_credit), fontSize = 12.sp, color = TextSecondary)
+        SectionCard {
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 14.dp),
+            ) {
+                Text(
+                    aboutUrl,
+                    fontSize = 13.sp,
+                    color = SamsungBlue,
+                    modifier = Modifier.clickable {
+                        runCatching {
+                            context.startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse(aboutUrl)))
+                        }
+                    },
+                )
+                Spacer(Modifier.height(6.dp))
+                Text(stringResource(R.string.about_credit), fontSize = 12.sp, color = TextSecondary)
+            }
         }
 
         Spacer(Modifier.height(32.dp))
