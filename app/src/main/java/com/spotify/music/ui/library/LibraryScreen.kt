@@ -341,11 +341,16 @@ private fun MiniPlayerBarInline(
     onOpenPlayer: () -> Unit,
 ) {
     val song = uiState.currentSong
+    // 展开状态在 Library 组合内存活（tab 切换不影响）；默认收起为唱片
+    var miniExpanded by remember { mutableStateOf(false) }
     com.spotify.music.ui.components.MiniPlayer(
         songPath = song?.path,
         title = song?.title ?: stringResource(R.string.not_playing),
         artist = song?.let { artistDisplay(it.artist) } ?: stringResource(R.string.click_to_play),
         isPlaying = uiState.isPlaying,
+        expanded = miniExpanded,
+        onExpand = { miniExpanded = true },
+        onCollapse = { miniExpanded = false },
         onToggle = { client.togglePlayPause() },
         onNext = { client.player?.seekToNextMediaItem() },
         onPrev = { client.player?.seekToPreviousMediaItem() },

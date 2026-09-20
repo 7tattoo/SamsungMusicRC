@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
@@ -33,7 +34,8 @@ import androidx.compose.ui.res.stringResource
 import com.spotify.music.R
 
 /**
- * 底部迷你播放条（深蓝圆角胶囊）。
+ * 底部迷你播放条。expanded=false 时收起为左下角唱片样式小圆封面
+ * （显示当前歌曲封面），点击展开为完整条；展开状态由调用方持有。
  */
 @Composable
 fun MiniPlayer(
@@ -41,12 +43,54 @@ fun MiniPlayer(
     title: String,
     artist: String,
     isPlaying: Boolean,
+    expanded: Boolean,
+    onExpand: () -> Unit,
+    onCollapse: () -> Unit,
     onToggle: () -> Unit,
     onNext: () -> Unit,
     onPrev: () -> Unit,
     onOpenQueue: () -> Unit,
     onOpenPlayer: () -> Unit,
 ) {
+    if (!expanded) {
+        // 收起态：左下角唱片封面（黑胶外环 + 封面 + 中孔），点击展开。
+        // ponytail: 只在歌曲页签 Box 内左下角，不遮挡列表末项太多；要拖拽/吸附再加。
+        if (songPath == null) return
+        Box(
+            modifier = Modifier
+                .padding(start = 14.dp, bottom = 10.dp)
+                .size(52.dp)
+                .clickable { onExpand() },
+        ) {
+            Box(
+                Modifier
+                    .size(52.dp)
+                    .clip(CircleShape)
+                    .background(Color(0xFF2A2A32)),
+            )
+            AlbumArt(
+                path = songPath,
+                modifier = Modifier
+                    .size(42.dp)
+                    .clip(CircleShape),
+                placeholder = { m ->
+                    Box(
+                        m.clip(CircleShape).background(Color(0xFF5C64B8)),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(Icons.Filled.MusicNote, contentDescription = null, tint = Color.White.copy(alpha = 0.7f))
+                    }
+                },
+            )
+            Box(
+                Modifier
+                    .size(8.dp)
+                    .clip(CircleShape)
+                    .background(Color(0xFF2A2A32)),
+            )
+        }
+        return
+    }
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -131,6 +175,14 @@ fun MiniPlayer(
                 modifier = Modifier
                     .size(26.dp)
                     .clickable { onNext() },
+            )
+            Icon(
+                Icons.Filled.KeyboardArrowDown,
+                contentDescription = stringResource(R.string.collapse),
+                tint = Color.White,
+                modifier = Modifier
+                    .size(24.dp)
+                    .clickable { onCollapse() },
             )
             PlaylistNoteIcon(
                 tint = Color.White,
