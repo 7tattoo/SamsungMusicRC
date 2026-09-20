@@ -365,11 +365,14 @@ class PlaybackService : MediaLibraryService() {
                     if (player.mediaItemCount > 0) return@launch
                     player.setMediaItems(items, idx.coerceIn(0, items.size - 1), pos.coerceAtLeast(0L))
                     player.prepare()
+                    // 冷启动只恢复队列+进度，一律暂停态：自动续播曾与 UI 状态同步
+                    // 竞态，是「重启后自动开播但控件卡在暂停」的根源（多轮 trace
+                    // 均指向该路径）。用户点一下播放即可，队列/进度无损。
                     player.playWhenReady = false
-                    pendingAutoResume = wasPlaying
+                    pendingAutoResume = false
                     CrashLogger.trace(
                         "restoreQueue done items=${items.size} idx=$idx pos=$pos " +
-                            "wasPlaying=$wasPlaying autoResume=$wasPlaying"
+                            "wasPlaying=$wasPlaying autoResume=false"
                     )
                 }.onFailure { CrashLogger.log(it, "restoreLastQueue") }
             }
