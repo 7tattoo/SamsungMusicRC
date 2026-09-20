@@ -511,12 +511,15 @@ class PlaybackService : MediaLibraryService() {
         val path = item.mediaId ?: return
         CrashLogger.trace("loadAndInjectLyrics ENTER idx=$index path=$path")
 
-        val lrc = withContext(Dispatchers.IO) { LyricsLoader.loadWholeLrc(path) }
+            val lrc = withContext(Dispatchers.IO) { LyricsLoader.loadWholeLrc(path) }
         CrashLogger.trace("loadAndInjectLyrics lrc=${lrc?.length ?: 0} chars")
         if (lrc.isNullOrEmpty()) {
             // 空歌词定位：旁路文件 / 内嵌标签到底有没有，直接写进 trace，
             // 下次「暂无歌词」的两首歌一放就有结论，不用再猜。
             CrashLogger.trace("loadAndInjectLyrics empty diag=${withContext(Dispatchers.IO) { LyricsLoader.diagnose(path) }}")
+        } else if (withContext(Dispatchers.IO) { LyricsLoader.load(path).lines.isEmpty() }) {
+            // 读到了文本但解析为空：把原文格式直接暴露在 trace 里
+            CrashLogger.trace("loadAndInjectLyrics parse-empty diag=${withContext(Dispatchers.IO) { LyricsLoader.diagnose(path) }}")
         }
         // 曲目可能已再次切换
         if (player.currentMediaItemIndex != index) return

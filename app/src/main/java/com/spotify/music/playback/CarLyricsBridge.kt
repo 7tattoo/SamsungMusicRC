@@ -97,7 +97,9 @@ object CarLyricsBridge {
 
         return try {
             val extras = oldExtras?.let { Bundle(it) } ?: Bundle()
-            extras.putString(KEY_UCAR_LYRICS_WHOLE, lrc)
+            // ucar 整段通道用规范化 LRC（单时间戳/无逐字标签/固定 [mm:ss.xx]）。
+            // 原始增强 LRC 直接塞过去会被部分车机整行渲染，歌词里带出时间戳。
+            extras.putString(KEY_UCAR_LYRICS_WHOLE, canonicalLrc(lrc) ?: lrc)
             extras.putLong(KEY_UCAR_LYRICS_STATUS, 0L)
             extras.putLong(KEY_MIX_SUPPORT_EVENT, SUPPORT_EVENT_ALL)
             item.buildUpon()
@@ -118,6 +120,43 @@ object CarLyricsBridge {
     /** 队列构建时：只放 support_event 能力位，不放歌词（无歌词窗口零负担） */
     fun baseExtras(): Bundle = Bundle().apply {
         if (enabled) putLong(KEY_MIX_SUPPORT_EVENT, SUPPORT_EVENT_ALL)
+    }
+
+    /**
+     * 车机端 LRC 规范化：
+     *  - 每行只保留第一个时间戳、剥逐字时间戳 <mm:ss.xx>（部分车机整行原文渲染，会带出 [00:29.86]）
+     *  - 补零到 [mm:ss.xx] 固定两位小数、时间升序
+     * 原子随身听通道用原文没问题（组件自己解析），这个只给 ucar 整段通道用。
+     */
+    fun canonicalLrc(raw: String?): String? {
+        if (raw.isNullOrBlank()) return null
+        val meta = Regex("""^\[(ti|ar|al|by|offset|au|length):(.*)]$""", RegexOption.IGNORE_CASE)
+        val stamp = Regex("""\[(\d{1,3}):(\d{1,2})(?:[.:](\d{1,3}))?]""")
+        val word = Regex("""<\d{1,3}:\d{1,2}(?:[.:]\d{1,3})?>""")
+        data class Line(val t: Long, val text: String)
+        val lines = ArrayList<Line>(128)
+        raw.lineSequence().forEach { l0 ->
+            val l = l0.trim()
+            if (l.isEmpty() || meta.matches(l)) return@forEach
+            val stamps = stamp.findAll(l).toList()
+            if (stamps.isEmpty()) return@forEach
+            val text = word.replace(l.substring(stamps.last().range.last + 1), "").trim()
+            if (text.isEmpty()) return@forEach
+            stamps.forEach { m ->
+                val min = m.groupValues[1].toLong()
+                val sec = m.groupValues[2].toLong()
+                val f = m.groupValues[3]
+                val ms = when (f.length) { 0 -> 0L; 1 -> f.toLong() * 100; 2 -> f.toLong() * 10; else -> f.take(3).toLong() / 10 }
+                lines.add(Line(min * 60_000 + sec * 1_000 + ms, text))
+            }
+        }
+        if (lines.isEmpty()) return null
+        return lines.sortedBy { it.t }.joinToString("\n") { (t, text) ->
+            val mm = t / 60_000
+            val ss = (t % 60_000) / 1000
+            val cs = (t % 1000) / 10
+            "[%02d:%02d.%02d]%s".format(mm, ss, cs, text)
+        }
     }
 
     /**

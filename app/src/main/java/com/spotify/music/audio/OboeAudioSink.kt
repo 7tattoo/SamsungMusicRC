@@ -62,6 +62,9 @@ class OboeAudioSink(
     // 连续写阻塞计数：超时/写 0 字节都是瞬态，连拍多下无进展才重开流。
     private var stallCount = 0
 
+    /** 播放器意图是否为播放。暂停期间禁止一切 stall 触发的流重开（否则暂停会被自己复活）。 */
+    @Volatile private var streamActive = true
+
     // 暂停诊断：记录暂停瞬间设备已消费的帧数与时刻，下次 play() 时对比，
     // 用于判断「点暂停后音乐还在放」是原生流没停下，还是播放又被人重新拉起。
     private var framesAtPause = 0L
@@ -159,12 +162,17 @@ class OboeAudioSink(
         } else {
             CrashLogger.trace("sink play | isOpen=${oboe?.isOpen}")
         }
+        streamActive = true
         oboe?.start()
     }
 
     override fun pause() {
         framesAtPause = oboe?.framesRead() ?: 0L
         pausedAtMs = android.os.SystemClock.uptimeMillis()
+        // 先摘掉「活动」标记再暂停：暂停窗口内写入方返回的 0 字节属于正常反压，
+        // 不允许触发 reopen（vivo OpenSL HAL requestPause 不可靠，pause 走 stop，
+        // 如果 stall 逻辑此刻把流 start 回来，就会表现为「暂停后自动恢复播放」）。
+        streamActive = false
         CrashLogger.trace("sink pause | isOpen=${oboe?.isOpen} framesRead=$framesAtPause")
         // Must actually pause the native stream. ExoPlayer calls this when the user taps
         // pause; if we skip it the Oboe stream keeps draining its internal buffer and
@@ -278,6 +286,7 @@ class OboeAudioSink(
         inputEnded = false
         frameBase = oboe?.framesRead() ?: 0L
         stallCount = 0
+        streamActive = true
     }
 
     /** Drains any pending output and everything the pipeline can currently produce. */
@@ -379,6 +388,10 @@ class OboeAudioSink(
         }
         if (n < 0 || (n == 0 && buffer.remaining() >= outputFrameSize)) {
             val stall = ++stallCount
+            // ExoPlayer 暂停后仍会继续解码喂缓冲；流已 stop 时 write 必然 0 字节，
+            // 这不是「流楔死」。绝不能在暂停态重开/start 流——否则就是
+            // 「手动暂停后，播放自己又复活」的 bug（trace: 暂停 8s 后 reopened）。
+            if (!streamActive) return false
             // 写超时 / 缓冲满：瞬态，让上层重试。连续多拍无进展则重开流防楔死。
             if (stall >= MAX_CONSECUTIVE_STALLS) {
                 stallCount = 0

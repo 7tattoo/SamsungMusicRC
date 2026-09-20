@@ -69,10 +69,13 @@ object LyricsLoader {
             ?: "[]"
         val embedded = runCatching { EmbeddedLyricsReader.describe(audioPath) }
             .getOrDefault("embed-probe-error")
-        // 解析探针：raw 读到了但 parse 为空 = 解析器问题；raw 为 null = 来源问题
+        // 解析探针：raw 读到了但 parse 为空 = 解析器问题；raw 为 null = 来源问题。
+        // rawHead 把原文头几行直接带出来，下一轮就能看到真实格式（不用再猜）。
         val raw = readRaw(audioPath)
         val parsedLines = raw?.let { LrcParser.parse(it).lines.size } ?: -1
-        return "sidecar=$sidecars embedded=$embedded rawChars=${raw?.length ?: 0} parsedLines=$parsedLines"
+        val rawHead = raw?.take(120)?.replace("\n", "\\n")
+        return "sidecar=$sidecars embedded=$embedded rawChars=${raw?.length ?: 0} " +
+            "parsedLines=$parsedLines rawHead=[$rawHead]"
     }
 
     /**
