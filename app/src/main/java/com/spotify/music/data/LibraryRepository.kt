@@ -156,28 +156,37 @@ fun pinyinInitial(text: String): Char {
 }
 
 /**
- * 中英文混拼排序键（拼音字母段交错）：
- * 中文条目把首字拼音首字母前缀到排序键，使 哀人 排进 A 段、与 animal 交错；
- * 拉丁/数字条目保持原样。拼音首字母由 pinyinInitial() 求得（ICU 转写）。
+ * 中英混拼排序键：先按字母段（A-Z，数字为 '0'），同段内英文/数字在前、
+ * 中文（拼音）在后，中文之间按拼音序交错。
+ * 键 = (字母段, 语言组[0=拉丁/数字, 1=中文等], CollationKey)。
  */
-fun mixedSortKey(s: String, collator: Collator): java.text.CollationKey {
+fun mixedSortKey(s: String, collator: Collator): Triple<Char, Int, java.text.CollationKey> {
     val t = s.trim()
-    if (t.isEmpty()) return collator.getCollationKey("")
+    if (t.isEmpty()) return Triple('0', 1, collator.getCollationKey(""))
     val c0 = t[0]
-    if (c0.isDigit()) return collator.getCollationKey("0$t") // 数字段排最前
+    if (c0.isDigit()) return Triple('0', 0, collator.getCollationKey("0$t")) // 数字段排最前
     val upper = c0.uppercaseChar()
-    if (upper in 'A'..'Z') return collator.getCollationKey(t)
-    // 中文等非拉丁：取拼音首字母前缀，参与统一字母序
+    if (upper in 'A'..'Z') return Triple(upper, 0, collator.getCollationKey(t))
+    // 中文等非拉丁：落到拼音首字母段，组内排在该段英文之后，按拼音排序
     val pi = pinyinInitial(t)
-    return if (pi in 'A'..'Z') collator.getCollationKey("${pi.lowercaseChar()}$t")
-    else collator.getCollationKey(t)
+    return if (pi in 'A'..'Z') Triple(pi, 1, collator.getCollationKey("${pi.lowercaseChar()}$t"))
+    else Triple('#', 1, collator.getCollationKey(t))
 }
 
-/** 中英混拼排序：预计算 CollationKey 再排序，避免比较时重复求键 */
+/** 中英混拼排序：预计算 (段, 组, CollationKey) 再排序，避免比较时重复求键 */
 fun <T> List<T>.sortedByMixedKey(select: (T) -> String): List<T> {
     val c = LibraryRepository.collator
     return map { it to mixedSortKey(select(it), c) }
-        .sortedWith(Comparator { a, b -> a.second.compareTo(b.second) })
+        .sortedWith(
+            Comparator { a, b ->
+                val byLetter = a.second.first.compareTo(b.second.first)
+                if (byLetter != 0) byLetter
+                else {
+                    val byLang = a.second.second.compareTo(b.second.second)
+                    if (byLang != 0) byLang else a.second.third.compareTo(b.second.third)
+                }
+            },
+        )
         .map { it.first }
 }
 
