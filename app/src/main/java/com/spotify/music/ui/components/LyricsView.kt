@@ -24,6 +24,8 @@ import com.spotify.music.core.model.Lyrics
 import com.spotify.music.ui.theme.LyricHighlight
 import com.spotify.music.ui.theme.LyricNormal
 import kotlinx.coroutines.delay
+import androidx.compose.ui.res.stringResource
+import com.spotify.music.R
 
 /**
  * 滚动歌词：带时间戳时按进度自动滚动，当前行高亮；点击行可跳转进度。
@@ -59,7 +61,7 @@ fun LyricsView(
     if (!lyrics.hasTimestamps && lyrics.lines.isEmpty()) {
         Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Text(
-                "暂无歌词",
+                stringResource(R.string.no_lyrics),
                 color = normalColor.copy(alpha = 0.5f),
                 fontSize = unitSp(15f),
             )

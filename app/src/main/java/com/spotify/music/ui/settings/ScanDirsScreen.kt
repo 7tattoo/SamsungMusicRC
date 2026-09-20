@@ -43,6 +43,8 @@ import com.spotify.music.ui.theme.SamsungBlue
 import com.spotify.music.ui.theme.TextPrimary
 import com.spotify.music.ui.theme.TextSecondary
 import kotlinx.coroutines.launch
+import androidx.compose.ui.res.stringResource
+import com.spotify.music.R
 
 @Composable
 fun ScanDirsScreen(
@@ -73,10 +75,10 @@ fun ScanDirsScreen(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             IconButton(onClick = onBack) {
-                Icon(Icons.Filled.ArrowBack, contentDescription = "返回", tint = TextPrimary)
+                Icon(Icons.Filled.ArrowBack, contentDescription = stringResource(R.string.back), tint = TextPrimary)
             }
             Text(
-                "扫描目录",
+                stringResource(R.string.scan_dirs),
                 fontSize = 20.sp,
                 fontWeight = FontWeight.Bold,
                 color = SamsungBlue,
@@ -85,7 +87,7 @@ fun ScanDirsScreen(
             IconButton(onClick = {
                 onPickDirectory()
             }) {
-                Icon(Icons.Filled.Add, contentDescription = "添加目录", tint = SamsungBlue)
+                Icon(Icons.Filled.Add, contentDescription = stringResource(R.string.add_dir), tint = SamsungBlue)
             }
         }
 
@@ -133,7 +135,7 @@ fun ScanDirsScreen(
                     ) {
                         Icon(
                             Icons.Filled.Delete,
-                            contentDescription = "移除",
+                            contentDescription = stringResource(R.string.remove),
                             tint = if (dirs.size > 1) Color(0xFFE0533B) else Color(0xFFCCCCCC),
                         )
                     }
@@ -142,7 +144,7 @@ fun ScanDirsScreen(
 
             item {
                 Text(
-                    "默认目录为 /Music。添加的目录会递归扫描其所有子文件夹。修改后自动重新扫描。",
+                    stringResource(R.string.scan_dirs_hint),
                     fontSize = 12.sp,
                     color = TextSecondary,
                     modifier = Modifier.padding(top = 8.dp, bottom = 16.dp),

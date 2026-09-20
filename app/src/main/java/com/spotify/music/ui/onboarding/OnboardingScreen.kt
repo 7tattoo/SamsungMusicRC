@@ -47,6 +47,8 @@ import com.spotify.music.ui.theme.LibraryBg
 import com.spotify.music.ui.theme.SamsungBlue
 import com.spotify.music.ui.theme.TextPrimary
 import com.spotify.music.ui.theme.TextSecondary
+import androidx.compose.ui.res.stringResource
+import com.spotify.music.R
 
 /**
  * 首次启动引导页（参考 Samsung Music 权限页样式）：
@@ -93,14 +95,14 @@ fun OnboardingScreen(
                 )
             }
             Text(
-                "Samsung Music 使用这些权限",
+                stringResource(R.string.onboarding_title),
                 fontSize = 22.sp,
                 fontWeight = FontWeight.Bold,
                 color = TextPrimary,
                 modifier = Modifier.padding(top = 18.dp),
             )
             Text(
-                "为了正常扫描与播放本地音乐，请查看以下权限说明。",
+                stringResource(R.string.onboarding_subtitle),
                 fontSize = 14.sp,
                 color = TextSecondary,
                 textAlign = TextAlign.Center,
@@ -116,9 +118,9 @@ fun OnboardingScreen(
                         modifier = Modifier.size(22.dp),
                     )
                 },
-                tag = "需要的权限",
-                title = "音乐与音频",
-                desc = "用于播放手机上存储的音频文件",
+                tag = stringResource(R.string.required_permission),
+                title = stringResource(R.string.music_audio),
+                desc = stringResource(R.string.music_audio_desc),
             )
             PermissionCard(
                 icon = {
@@ -129,9 +131,9 @@ fun OnboardingScreen(
                         modifier = Modifier.size(22.dp),
                     )
                 },
-                tag = "可选权限",
-                title = "通知",
-                desc = "用于在应用处于后台时继续控制播放并显示通知",
+                tag = stringResource(R.string.optional_permission),
+                title = stringResource(R.string.notifications),
+                desc = stringResource(R.string.notifications_desc),
             )
 
             Row(
@@ -141,7 +143,7 @@ fun OnboardingScreen(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    "扫描目录",
+                    stringResource(R.string.scan_dirs),
                     fontSize = 17.sp,
                     fontWeight = FontWeight.Bold,
                     color = TextPrimary,
@@ -154,7 +156,7 @@ fun OnboardingScreen(
                         tint = SamsungBlue,
                         modifier = Modifier.size(18.dp),
                     )
-                    Text("添加", color = SamsungBlue)
+                    Text(stringResource(R.string.add), color = SamsungBlue)
                 }
             }
             dirs.forEach { dir ->
@@ -177,7 +179,7 @@ fun OnboardingScreen(
                     if (dirs.size > 1) {
                         Icon(
                             Icons.Filled.Delete,
-                            contentDescription = "移除",
+                            contentDescription = stringResource(R.string.remove),
                             tint = Color(0xFFE0533B),
                             modifier = Modifier
                                 .size(18.dp)
@@ -191,13 +193,13 @@ fun OnboardingScreen(
             }
             if (needsAllFilesPermission()) {
                 Text(
-                    "提示：自定义目录下的音乐与歌词文件需要「所有文件访问权限」才能读取。",
+                    stringResource(R.string.all_files_hint),
                     fontSize = 12.sp,
                     color = TextSecondary,
                     modifier = Modifier.padding(top = 10.dp),
                 )
                 TextButton(onClick = onGrantAllFiles) {
-                    Text("前往授权「所有文件访问权限」", color = SamsungBlue, fontWeight = FontWeight.SemiBold)
+                    Text(stringResource(R.string.grant_all_files), color = SamsungBlue, fontWeight = FontWeight.SemiBold)
                 }
             }
             Spacer(Modifier.height(16.dp))
@@ -210,7 +212,7 @@ fun OnboardingScreen(
                 .fillMaxWidth()
                 .height(52.dp),
         ) {
-            Text("继续", fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+            Text(stringResource(R.string.continue_label), fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
         }
     }
 }

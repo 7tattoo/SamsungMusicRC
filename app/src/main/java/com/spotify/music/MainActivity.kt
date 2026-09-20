@@ -157,13 +157,6 @@ class MainActivity : androidx.activity.ComponentActivity() {
                     launch { uiState.tick() }
                     // 服务刚恢复过队列（进程重启）→ 自动接着上次进度播放
                     client.resumeIfNeeded()
-                    // 自动续播是异步的：之后 3 秒内每 300ms 强制重读一次状态。
-                    // 进程被杀瞬间的 lastQueuePlaying 与 UI 监听器建立顺序存在竞态，
-                    // 这一拍兜底保证控件/播放页与实际播放状态一致（resync 幂等且廉价）。
-                    repeat(10) {
-                        kotlinx.coroutines.delay(300)
-                        uiState.resync()
-                    }
                     CrashLogger.trace("connect playback service OK")
                 }.onFailure { CrashLogger.log(it, "connect playback service") }
                 maybeFirstScan()
@@ -180,10 +173,10 @@ class MainActivity : androidx.activity.ComponentActivity() {
                         cur.add(path)
                         settings.scanDirs = cur
                         scanDirsVersion++
-                        Toast.makeText(this, "已添加扫描目录：$path", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(this, getString(R.string.scan_dir_added, path), Toast.LENGTH_SHORT).show()
                         lifecycleScope.launch(Dispatchers.IO) { library.rescan() }
                     } else {
-                        Toast.makeText(this, "暂仅支持主存储目录", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(this, getString(R.string.primary_only), Toast.LENGTH_SHORT).show()
                     }
                 }
             }
@@ -305,7 +298,7 @@ class MainActivity : androidx.activity.ComponentActivity() {
                 CrashLogger.log(t, "requestAllFilesAccess failed: $intent")
             }
         }
-        Toast.makeText(this, "无法打开权限设置页，请在系统设置中手动授予", Toast.LENGTH_LONG).show()
+        Toast.makeText(this, getString(R.string.cannot_open_permissions), Toast.LENGTH_LONG).show()
     }
 
     private fun maybeFirstScan() {

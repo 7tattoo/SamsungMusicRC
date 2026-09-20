@@ -62,11 +62,14 @@ import com.spotify.music.data.groupedAlbums
 import com.spotify.music.data.groupedArtists
 import com.spotify.music.data.sortedByMode
 import com.spotify.music.playback.PlaybackClient
+import com.spotify.music.ui.albumDisplay
+import com.spotify.music.ui.artistDisplay
 import com.spotify.music.ui.components.AlbumArt
 import com.spotify.music.ui.components.AzBubble
 import com.spotify.music.ui.components.AzScrollbar
 import com.spotify.music.ui.components.SortIcon
 import com.spotify.music.ui.components.letterOfText
+import com.spotify.music.ui.folderDisplay
 import com.spotify.music.ui.player.formatTime
 import com.spotify.music.ui.theme.LibraryBg
 import com.spotify.music.ui.theme.OrangeDot
@@ -75,8 +78,21 @@ import com.spotify.music.ui.theme.TextPrimary
 import com.spotify.music.ui.theme.TextSecondary
 import kotlinx.coroutines.launch
 import java.io.File
+import androidx.compose.ui.res.stringResource
+import com.spotify.music.R
 
 private val TABS = listOf("收藏", "播放列表", "歌曲", "专辑", "歌手", "文件夹")
+
+@Composable
+private fun tabLabel(t: String): String = when (t) {
+    "收藏" -> stringResource(R.string.tab_favorites)
+    "播放列表" -> stringResource(R.string.tab_playlists)
+    "歌曲" -> stringResource(R.string.tab_songs)
+    "专辑" -> stringResource(R.string.tab_albums)
+    "歌手" -> stringResource(R.string.tab_artists)
+    "文件夹" -> stringResource(R.string.tab_folders)
+    else -> t
+}
 
 /**
  * 资料库主页（竖屏）：Samsung Music 标题 + Tabs + 白色列表卡片 + 迷你播放条。
@@ -152,7 +168,7 @@ fun LibraryScreen(
             )
             Icon(
                 Icons.Filled.Search,
-                contentDescription = "搜索",
+                contentDescription = stringResource(R.string.search),
                 tint = Color(0xFF3A3A42),
                 modifier = Modifier
                     .padding(6.dp)
@@ -161,7 +177,7 @@ fun LibraryScreen(
             Box {
                 Icon(
                     Icons.Filled.MoreVert,
-                    contentDescription = "菜单",
+                    contentDescription = stringResource(R.string.menu),
                     tint = Color(0xFF3A3A42),
                     modifier = Modifier.clickable { onOpenSettings() },
                 )
@@ -184,7 +200,7 @@ fun LibraryScreen(
         ) {
             TABS.forEach { t ->
                 Text(
-                    t,
+                    tabLabel(t),
                     fontSize = 15.sp,
                     fontWeight = if (tab == t) FontWeight.Bold else FontWeight.Normal,
                     color = if (tab == t) SamsungBlue else TextPrimary,
@@ -211,7 +227,7 @@ fun LibraryScreen(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
-                        "‹ 返回",
+                        "‹ " + stringResource(R.string.back),
                         color = SamsungBlue,
                         fontSize = 14.sp,
                         modifier = Modifier
@@ -223,7 +239,7 @@ fun LibraryScreen(
                             .padding(12.dp),
                     )
                     Text(
-                        "${filterBrowse(songs, browse).size} 首",
+                        stringResource(R.string.songs_count, filterBrowse(songs, browse).size),
                         fontSize = 12.sp,
                         color = TextSecondary,
                     )
@@ -308,8 +324,8 @@ private fun MiniPlayerBarInline(
     val song = uiState.currentSong
     com.spotify.music.ui.components.MiniPlayer(
         songPath = song?.path,
-        title = song?.title ?: "未在播放",
-        artist = song?.artist ?: "点击播放歌曲",
+        title = song?.title ?: stringResource(R.string.not_playing),
+        artist = song?.let { artistDisplay(it.artist) } ?: stringResource(R.string.click_to_play),
         isPlaying = uiState.isPlaying,
         onToggle = { client.togglePlayPause() },
         onNext = { client.player?.seekToNextMediaItem() },
@@ -356,11 +372,11 @@ fun SongsTab(
                     Spacer(Modifier.width(6.dp))
                     Text(
                         when (sortMode) {
-                            "artist" -> "歌手"
-                            "album" -> "专辑"
-                            "added" -> "添加时间"
-                            "duration" -> "时长"
-                            else -> "名称"
+                            "artist" -> stringResource(R.string.sort_artist)
+                            "album" -> stringResource(R.string.sort_album)
+                            "added" -> stringResource(R.string.sort_added)
+                            "duration" -> stringResource(R.string.sort_duration)
+                            else -> stringResource(R.string.sort_title)
                         },
                         fontSize = 13.sp,
                         color = TextSecondary,
@@ -370,9 +386,9 @@ fun SongsTab(
                     expanded = showSortMenu,
                     onDismissRequest = { showSortMenu = false },
                 ) {
-                    listOf("名称" to "title", "歌手" to "artist", "专辑" to "album", "添加时间" to "added").forEach { (label, key) ->
+                    listOf(R.string.sort_title to "title", R.string.sort_artist to "artist", R.string.sort_album to "album", R.string.sort_added to "added").forEach { (res, key) ->
                         androidx.compose.material3.DropdownMenuItem(
-                            text = { Text(label) },
+                            text = { Text(stringResource(res)) },
                             onClick = {
                                 onSortChange(key)
                                 showSortMenu = false
@@ -397,7 +413,7 @@ fun SongsTab(
             ) {
                 Icon(
                     Icons.Filled.Shuffle,
-                    contentDescription = "随机播放",
+                    contentDescription = stringResource(R.string.shuffle),
                     tint = Color(0xFF2A2A32),
                     modifier = Modifier.size(20.dp),
                 )
@@ -416,7 +432,7 @@ fun SongsTab(
             ) {
                 Icon(
                     Icons.Filled.PlayArrow,
-                    contentDescription = "全部播放",
+                    contentDescription = stringResource(R.string.play_all),
                     tint = Color.White,
                     modifier = Modifier.size(22.dp),
                 )
@@ -517,7 +533,7 @@ fun SongRow(
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
-                song.artist,
+                artistDisplay(song.artist),
                 fontSize = 12.sp,
                 color = TextSecondary,
                 maxLines = 1,
@@ -527,7 +543,7 @@ fun SongRow(
         Box {
             Icon(
                 Icons.Filled.MoreVert,
-                contentDescription = "更多",
+                contentDescription = stringResource(R.string.more),
                 tint = Color(0xFF6B6B75),
                 modifier = Modifier.clickable { showMenu = true },
             )
@@ -536,7 +552,7 @@ fun SongRow(
                 onDismissRequest = { showMenu = false },
             ) {
                 androidx.compose.material3.DropdownMenuItem(
-                    text = { Text("下一首播放") },
+                    text = { Text(stringResource(R.string.next_play)) },
                     onClick = {
                         showMenu = false
                         val p = client.player ?: return@DropdownMenuItem
@@ -546,7 +562,7 @@ fun SongRow(
                     },
                 )
                 androidx.compose.material3.DropdownMenuItem(
-                    text = { Text(if (settings.favorites.contains(song.path)) "取消收藏" else "收藏") },
+                    text = { Text(if (settings.favorites.contains(song.path)) stringResource(R.string.unfavorite) else stringResource(R.string.favorite)) },
                     onClick = {
                         showMenu = false
                         settings.toggleFavorite(song.path)
@@ -554,14 +570,14 @@ fun SongRow(
                     },
                 )
                 androidx.compose.material3.DropdownMenuItem(
-                    text = { Text("歌曲详情") },
+                    text = { Text(stringResource(R.string.song_details)) },
                     onClick = {
                         showMenu = false
                         showDetails = true
                     },
                 )
                 androidx.compose.material3.DropdownMenuItem(
-                    text = { Text("删除") },
+                    text = { Text(stringResource(R.string.delete)) },
                     onClick = {
                         showMenu = false
                         showDelete = true
@@ -574,8 +590,8 @@ fun SongRow(
     if (showDelete) {
         AlertDialog(
             onDismissRequest = { showDelete = false },
-            title = { Text("删除歌曲") },
-            text = { Text("确定从设备中删除「${song.title}」吗？") },
+            title = { Text(stringResource(R.string.delete_song)) },
+            text = { Text(stringResource(R.string.delete_confirm, song.title)) },
             confirmButton = {
                 TextButton(onClick = {
                     showDelete = false
@@ -585,27 +601,27 @@ fun SongRow(
                         com.spotify.music.core.tags.CoverLoader.invalidate(song.path)
                         scope { library.rescan() }
                     } else {
-                        android.widget.Toast.makeText(context, "删除失败", android.widget.Toast.LENGTH_SHORT).show()
+                        android.widget.Toast.makeText(context, context.getString(R.string.delete_failed), android.widget.Toast.LENGTH_SHORT).show()
                     }
-                }) { Text("删除") }
+                }) { Text(stringResource(R.string.delete)) }
             },
-            dismissButton = { TextButton(onClick = { showDelete = false }) { Text("取消") } },
+            dismissButton = { TextButton(onClick = { showDelete = false }) { Text(stringResource(R.string.cancel)) } },
         )
     }
     if (showDetails) {
         AlertDialog(
             onDismissRequest = { showDetails = false },
-            title = { Text("歌曲详情") },
+            title = { Text(stringResource(R.string.song_details)) },
             text = {
                 Column {
-                    Text("标题：${song.title}", fontSize = 13.sp)
-                    Text("歌手：${song.artist}", fontSize = 13.sp)
-                    Text("专辑：${song.album}", fontSize = 13.sp)
-                    Text("时长：${formatTime(song.durationMs)}", fontSize = 13.sp)
-                    Text("路径：${song.path}", fontSize = 12.sp)
+                    Text(stringResource(R.string.title_label) + "：${song.title}", fontSize = 13.sp)
+                    Text(stringResource(R.string.artist_label) + "：${artistDisplay(song.artist)}", fontSize = 13.sp)
+                    Text(stringResource(R.string.album_label) + "：${albumDisplay(song.album)}", fontSize = 13.sp)
+                    Text(stringResource(R.string.duration_label) + "：${formatTime(song.durationMs)}", fontSize = 13.sp)
+                    Text(stringResource(R.string.path_label) + "：${song.path}", fontSize = 12.sp)
                 }
             },
-            confirmButton = { TextButton(onClick = { showDetails = false }) { Text("关闭") } },
+            confirmButton = { TextButton(onClick = { showDetails = false }) { Text(stringResource(R.string.close)) } },
         )
     }
 }
@@ -638,7 +654,7 @@ private fun PlaylistsTab(
             androidx.compose.material3.OutlinedTextField(
                 value = newName,
                 onValueChange = { newName = it },
-                placeholder = { Text("新建播放列表") },
+                placeholder = { Text(stringResource(R.string.new_playlist)) },
                 modifier = Modifier.weight(1f),
             )
             Spacer(Modifier.width(8.dp))
@@ -650,7 +666,7 @@ private fun PlaylistsTab(
                     newName = ""
                     version++
                 }
-            }) { Text("创建") }
+            }) { Text(stringResource(R.string.create)) }
         }
         LazyColumn {
             itemsIndexed(playlists) { i, (name, paths) ->
@@ -674,11 +690,11 @@ private fun PlaylistsTab(
                     )
                     Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
                         Text(name, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
-                        Text("${paths.size} 首", fontSize = 12.sp, color = TextSecondary)
+                        Text(stringResource(R.string.songs_count, paths.size), fontSize = 12.sp, color = TextSecondary)
                     }
                     Icon(
                         Icons.Filled.Delete,
-                        contentDescription = "删除播放列表",
+                        contentDescription = stringResource(R.string.delete_playlist),
                         tint = Color(0xFFB0B0B8),
                         modifier = Modifier.clickable {
                             val list = settings.getPlaylists().toMutableList()
@@ -725,10 +741,10 @@ private fun AlbumRow(album: AlbumGroup, client: PlaybackClient, onBrowse: (Strin
                 .clip(RoundedCornerShape(8.dp)),
         )
         Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
-            Text(album.name, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(album.artist, fontSize = 12.sp, color = TextSecondary, maxLines = 1)
+            Text(albumDisplay(album.name), fontSize = 15.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(artistDisplay(album.artist), fontSize = 12.sp, color = TextSecondary, maxLines = 1)
         }
-        Text("${album.songs.size}首", fontSize = 12.sp, color = TextSecondary)
+        Text(stringResource(R.string.songs_count, album.songs.size), fontSize = 12.sp, color = TextSecondary)
     }
 }
 
@@ -754,8 +770,8 @@ private fun ArtistsTab(songs: List<Song>, client: PlaybackClient, onBrowse: (Str
                         .clip(CircleShape),
                 )
                 Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
-                    Text(artist.name, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
-                    Text("${artist.albumCount}张专辑 · ${artist.songCount}首", fontSize = 12.sp, color = TextSecondary)
+                    Text(artistDisplay(artist.name), fontSize = 15.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                    Text(stringResource(R.string.artist_info, artist.albumCount, artist.songCount), fontSize = 12.sp, color = TextSecondary)
                 }
             }
         }
@@ -807,10 +823,10 @@ private fun FoldersTab(
                         )
                     }
                     Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
-                        Text(folder.name, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(folderDisplay(folder.name), fontSize = 15.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Text(folder.path, fontSize = 12.sp, color = TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
-                    Text("${folder.songs.size}首", fontSize = 12.sp, color = TextSecondary)
+                    Text(stringResource(R.string.songs_count, folder.songs.size), fontSize = 12.sp, color = TextSecondary)
                 }
                 if (expanded == folder.path) {
                     folder.songs.forEach { song ->

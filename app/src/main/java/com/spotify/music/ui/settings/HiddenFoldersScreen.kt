@@ -42,6 +42,8 @@ import com.spotify.music.ui.theme.SamsungBlue
 import com.spotify.music.ui.theme.TextPrimary
 import com.spotify.music.ui.theme.TextSecondary
 import kotlinx.coroutines.launch
+import androidx.compose.ui.res.stringResource
+import com.spotify.music.R
 
 @Composable
 fun HiddenFoldersScreen(
@@ -66,10 +68,10 @@ fun HiddenFoldersScreen(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             IconButton(onClick = onBack) {
-                Icon(Icons.Filled.ArrowBack, contentDescription = "返回", tint = TextPrimary)
+                Icon(Icons.Filled.ArrowBack, contentDescription = stringResource(R.string.back), tint = TextPrimary)
             }
             Text(
-                "隐藏的文件夹",
+                stringResource(R.string.hidden_folders_title),
                 fontSize = 20.sp,
                 fontWeight = FontWeight.Bold,
                 color = SamsungBlue,
@@ -79,7 +81,7 @@ fun HiddenFoldersScreen(
 
         if (folders.isEmpty()) {
             Text(
-                "暂无已扫描到的文件夹。请先在「设置 → 扫描目录」添加目录并完成扫描。",
+                stringResource(R.string.hidden_empty_hint),
                 fontSize = 13.sp,
                 color = TextSecondary,
                 modifier = Modifier.padding(24.dp),
@@ -137,7 +139,7 @@ private fun HiddenFolderRow(
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
-                "${group.songs.size} 首 · ${group.path}",
+                stringResource(R.string.folder_line, group.songs.size, group.path),
                 fontSize = 12.sp,
                 color = TextSecondary,
                 maxLines = 1,

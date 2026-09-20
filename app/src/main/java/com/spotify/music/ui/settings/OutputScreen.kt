@@ -37,6 +37,8 @@ import com.spotify.music.ui.theme.SamsungBlue
 import com.spotify.music.ui.theme.TextPrimary
 import com.spotify.music.ui.theme.TextSecondary
 import kotlinx.coroutines.delay
+import androidx.compose.ui.res.stringResource
+import com.spotify.music.R
 
 /**
  * 输出信息页：显示实时音频输出链路（设备 / 采样率 / 位深 / 声道 / 软件音效链）。
@@ -49,7 +51,7 @@ fun OutputScreen(onBack: () -> Unit, onOutputChanged: () -> Unit = {}) {
     val context = LocalContext.current
     fun changed() {
         onOutputChanged()
-        Toast.makeText(context, "输出设置已保存，请完全重启应用后生效", Toast.LENGTH_SHORT).show()
+        Toast.makeText(context, context.getString(R.string.output_saved), Toast.LENGTH_SHORT).show()
     }
     var tick by remember { mutableIntStateOf(0) }
     var showDepthDialog by remember { mutableStateOf(false) }
@@ -88,12 +90,20 @@ fun OutputScreen(onBack: () -> Unit, onOutputChanged: () -> Unit = {}) {
         }
     }
 
-    val deviceName = remember(tick, outputMode, devices) {
+    val activeDevice = remember(tick, outputMode, devices) {
         if (outputMode != "system") {
             val activeId = EqState.outDeviceId
-            if (activeId > 0) devices.firstOrNull { it.id == activeId }?.let { deviceLabel(it) } ?: "Oboe 设备 ID $activeId"
-            else "Oboe 自动路由"
-        } else "AudioTrack · 系统路由"
+            if (activeId > 0) devices.firstOrNull { it.id == activeId } else null
+        } else null
+    }
+    val deviceName = if (outputMode == "system") {
+        stringResource(R.string.mode_system_route)
+    } else {
+        val activeId = EqState.outDeviceId
+        if (activeId > 0) {
+            activeDevice?.let { localizedDeviceLabel(it) }
+                ?: stringResource(R.string.device) + " ID $activeId"
+        } else stringResource(R.string.mode_aaudio_auto)
     }
     val sampleRate = EqState.outSampleRate
     val channelCount = EqState.outChannelCount
@@ -119,20 +129,20 @@ fun OutputScreen(onBack: () -> Unit, onOutputChanged: () -> Unit = {}) {
                     .clickable { onBack() }
                     .padding(end = 12.dp),
             )
-            Text("输出", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = SamsungBlue)
+            Text(stringResource(R.string.output_title), fontSize = 22.sp, fontWeight = FontWeight.Bold, color = SamsungBlue)
         }
 
         SectionCard {
-            InfoLine("输出设备", deviceName)
+            InfoLine(stringResource(R.string.output_device), deviceName)
             Divider()
-            InfoLine("实际输出采样率", if (sampleRate > 0) "$sampleRate Hz" else "未在播放")
+            InfoLine(stringResource(R.string.actual_sample_rate), if (sampleRate > 0) "$sampleRate Hz" else stringResource(R.string.not_playing))
             Divider()
-            InfoLine("输出位深 (PCM)", encoding)
+            InfoLine(stringResource(R.string.output_bit_depth), localizedEncoding(encoding))
             Divider()
-            InfoLine("声道数", if (channelCount > 0) "$channelCount" else "未在播放")
+            InfoLine(stringResource(R.string.channels), if (channelCount > 0) "$channelCount" else stringResource(R.string.not_playing))
         }
 
-        SectionLabel("输出设置")
+        SectionLabel(stringResource(R.string.output_settings))
         SectionCard {
             Row(
                 Modifier
@@ -141,16 +151,16 @@ fun OutputScreen(onBack: () -> Unit, onOutputChanged: () -> Unit = {}) {
                     .padding(horizontal = 16.dp, vertical = 14.dp),
             ) {
                 Column(Modifier.weight(1f)) {
-                    Text("输出模式", fontSize = 15.sp, color = TextPrimary)
+                    Text(stringResource(R.string.output_mode), fontSize = 15.sp, color = TextPrimary)
                     Text(
-                        "Halcyon Oboe 后端：可选 AAudio / OpenSL ES；USB DAC 独占需单独开启。",
+                        stringResource(R.string.output_mode_desc),
                         fontSize = 12.sp,
                         color = TextSecondary,
                         modifier = Modifier.padding(top = 3.dp),
                     )
                 }
                 Text(
-                    when (outputMode) { "aaudio" -> "AAudio（Oboe）"; "opensles" -> "OpenSL ES（Oboe）"; else -> "AudioTrack（系统）" },
+                    when (outputMode) { "aaudio" -> stringResource(R.string.mode_aaudio); "opensles" -> stringResource(R.string.mode_opensles); else -> stringResource(R.string.mode_system) },
                     fontSize = 15.sp,
                     color = SamsungBlue,
                     fontWeight = FontWeight.SemiBold,
@@ -161,8 +171,8 @@ fun OutputScreen(onBack: () -> Unit, onOutputChanged: () -> Unit = {}) {
                 Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
             ) {
                 Column(Modifier.weight(1f).padding(end = 10.dp)) {
-                    Text("USB DAC 独占模式", fontSize = 15.sp, color = TextPrimary)
-                    Text("仅 AAudio 后端有效；不支持时 Oboe 自动使用共享模式", fontSize = 12.sp, color = TextSecondary, modifier = Modifier.padding(top = 3.dp))
+                    Text(stringResource(R.string.usb_exclusive), fontSize = 15.sp, color = TextPrimary)
+                    Text(stringResource(R.string.usb_exclusive_desc), fontSize = 12.sp, color = TextSecondary, modifier = Modifier.padding(top = 3.dp))
                 }
                 Switch(
                     checked = usbExclusive,
@@ -182,17 +192,17 @@ fun OutputScreen(onBack: () -> Unit, onOutputChanged: () -> Unit = {}) {
                     .padding(horizontal = 16.dp, vertical = 14.dp),
             ) {
                 Column(Modifier.weight(1f)) {
-                    Text("输出通道", fontSize = 15.sp, color = TextPrimary)
+                    Text(stringResource(R.string.output_channel), fontSize = 15.sp, color = TextPrimary)
                     Text(
-                        "指定输出到扬声器/耳机/USB DAC/蓝牙（AAudio 原生模式生效）",
+                        stringResource(R.string.output_channel_desc),
                         fontSize = 12.sp,
                         color = TextSecondary,
                         modifier = Modifier.padding(top = 3.dp),
                     )
                 }
                 Text(
-                    if (outputDeviceId <= 0) "自动" else
-                        devices.firstOrNull { it.id == outputDeviceId }?.let { deviceLabel(it) } ?: "已指定设备",
+                    if (outputDeviceId <= 0) stringResource(R.string.auto) else
+                        devices.firstOrNull { it.id == outputDeviceId }?.let { localizedDeviceLabel(it) } ?: stringResource(R.string.device_specified),
                     fontSize = 15.sp,
                     color = SamsungBlue,
                     fontWeight = FontWeight.SemiBold,
@@ -209,10 +219,10 @@ fun OutputScreen(onBack: () -> Unit, onOutputChanged: () -> Unit = {}) {
                     .padding(horizontal = 16.dp, vertical = 14.dp),
             ) {
                 Column(Modifier.weight(1f)) {
-                    Text("输出采样率", fontSize = 15.sp, color = TextPrimary)
-                    Text("自动跟随音源，或指定目标采样率（两种输出模式均生效）", fontSize = 12.sp, color = TextSecondary, modifier = Modifier.padding(top = 3.dp))
+                    Text(stringResource(R.string.output_sample_rate), fontSize = 15.sp, color = TextPrimary)
+                    Text(stringResource(R.string.output_sample_rate_desc), fontSize = 12.sp, color = TextSecondary, modifier = Modifier.padding(top = 3.dp))
                 }
-                Text(if (targetSampleRate > 0) "${targetSampleRate / 1000f} kHz" else "自动", fontSize = 15.sp, color = SamsungBlue, fontWeight = FontWeight.SemiBold)
+                Text(if (targetSampleRate > 0) "${targetSampleRate / 1000f} kHz" else stringResource(R.string.auto), fontSize = 15.sp, color = SamsungBlue, fontWeight = FontWeight.SemiBold)
             }
             Divider()
             Row(
@@ -222,16 +232,16 @@ fun OutputScreen(onBack: () -> Unit, onOutputChanged: () -> Unit = {}) {
                     .padding(horizontal = 16.dp, vertical = 14.dp),
             ) {
                 Column(Modifier.weight(1f)) {
-                    Text("输出位深", fontSize = 15.sp, color = TextPrimary)
+                    Text(stringResource(R.string.output_bit_depth_title), fontSize = 15.sp, color = TextPrimary)
                     Text(
-                        "AudioTrack 与 Oboe 后端均可选；自动模式使用 16bit 默认位深",
+                        stringResource(R.string.output_bit_depth_desc),
                         fontSize = 12.sp,
                         color = TextSecondary,
                         modifier = Modifier.padding(top = 3.dp),
                     )
                 }
                 Text(
-                    when (bitDepth) { "auto" -> "自动"; "24" -> "24bit"; "32" -> "32bit"; "float" -> "32bit float"; else -> "16bit" },
+                    when (bitDepth) { "auto" -> stringResource(R.string.auto); "24" -> "24bit"; "32" -> "32bit"; "float" -> "32bit float"; else -> "16bit" },
                     fontSize = 15.sp,
                     color = SamsungBlue,
                     fontWeight = FontWeight.SemiBold,
@@ -239,27 +249,24 @@ fun OutputScreen(onBack: () -> Unit, onOutputChanged: () -> Unit = {}) {
             }
         }
 
-        SectionLabel("软件音效链")
+        SectionLabel(stringResource(R.string.effect_chain))
         SectionCard {
-            InfoLine("均衡器", if (EqState.enabled) "开启" else "关闭")
+            InfoLine(stringResource(R.string.equalizer), if (EqState.enabled) stringResource(R.string.on_state) else stringResource(R.string.off))
             Divider()
-            InfoLine("低音增强", if (EqState.bassBoostDb > 0f) "+%.0f dB".format(EqState.bassBoostDb) else "关")
+            InfoLine(stringResource(R.string.bass_boost), if (EqState.bassBoostDb > 0f) "+%.0f dB".format(EqState.bassBoostDb) else stringResource(R.string.off))
             Divider()
-            InfoLine("高音增强", if (EqState.trebleDb > 0f) "+%.0f dB".format(EqState.trebleDb) else "关")
+            InfoLine(stringResource(R.string.treble_boost), if (EqState.trebleDb > 0f) "+%.0f dB".format(EqState.trebleDb) else stringResource(R.string.off))
             Divider()
-            InfoLine("环绕增强", if (EqState.width > 0f) "%.0f%%".format(EqState.width * 100) else "关")
+            InfoLine(stringResource(R.string.surround), if (EqState.width > 0f) "%.0f%%".format(EqState.width * 100) else stringResource(R.string.off))
             Divider()
-            InfoLine("总增益", "%+.1f dB".format(EqState.preampDb))
+            InfoLine(stringResource(R.string.total_gain), "%+.1f dB".format(EqState.preampDb))
         }
 
-        SectionLabel("关于")
+        SectionLabel(stringResource(R.string.about))
         SectionCard {
             Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
                 Text(
-                    "以上为解码后经 DSP/格式处理后的 PCM 参数。\n\n" +
-                        "「AAudio / OpenSL ES（Oboe）」模式：由 Oboe 打开原生输出流，Media3 DSP/格式处理链在写入前运行；" +
-                        "独占模式只对兼容的 AAudio USB DAC 请求，失败由 Oboe 回退共享。原生模式端点按 Oboe 协商 PCM 格式。\n" +
-                        "「系统」模式：走 Android AudioTrack 系统混音，兼容性更好，支持播放速度和跳过静音。",
+                    stringResource(R.string.about_output),
                     fontSize = 13.sp,
                     color = TextSecondary,
                     lineHeight = 19.sp,
@@ -273,12 +280,12 @@ fun OutputScreen(onBack: () -> Unit, onOutputChanged: () -> Unit = {}) {
     if (showRateDialog) {
         AlertDialog(
             onDismissRequest = { showRateDialog = false },
-            title = { Text("输出采样率") },
+            title = { Text(stringResource(R.string.output_sample_rate)) },
             text = {
                 Column(Modifier.height(320.dp).verticalScroll(rememberScrollState())) {
                     val rates = listOf(0, 44100, 48000, 88200, 96000, 176400, 192000)
                     rates.forEach { rate ->
-                        val label = if (rate == 0) "自动（跟随音源）" else "${rate / 1000f} kHz"
+                        val label = if (rate == 0) stringResource(R.string.auto_follow_source) else "${rate / 1000f} kHz"
                         DeviceRow(label, targetSampleRate == rate) {
                             targetSampleRate = rate
                             settings.audioSampleRate = rate
@@ -288,16 +295,16 @@ fun OutputScreen(onBack: () -> Unit, onOutputChanged: () -> Unit = {}) {
                     }
                 }
             },
-            confirmButton = { TextButton(onClick = { showRateDialog = false }) { Text("取消") } },
+            confirmButton = { TextButton(onClick = { showRateDialog = false }) { Text(stringResource(R.string.cancel)) } },
         )
     }
     if (showDepthDialog) {
         AlertDialog(
             onDismissRequest = { showDepthDialog = false },
-            title = { Text("输出位深") },
+            title = { Text(stringResource(R.string.output_bit_depth_title)) },
             text = {
                 Column {
-                    listOf("自动（播放器协商）" to "auto", "16bit" to "16", "24bit" to "24", "32bit" to "32", "32bit float" to "float").forEach { (label, v) ->
+                    listOf(stringResource(R.string.auto_player_negotiated) to "auto", "16bit" to "16", "24bit" to "24", "32bit" to "32", "32bit float" to "float").forEach { (label, v) ->
                         Row(
                             Modifier
                                 .fillMaxWidth()
@@ -316,28 +323,28 @@ fun OutputScreen(onBack: () -> Unit, onOutputChanged: () -> Unit = {}) {
                 }
             },
             confirmButton = {
-                TextButton(onClick = { showDepthDialog = false }) { Text("取消") }
+                TextButton(onClick = { showDepthDialog = false }) { Text(stringResource(R.string.cancel)) }
             },
         )
     }
     if (showDeviceDialog) {
         AlertDialog(
             onDismissRequest = { showDeviceDialog = false },
-            title = { Text("输出通道") },
+            title = { Text(stringResource(R.string.output_channel)) },
             text = {
                 Column(
                     Modifier
                         .height(320.dp)
                         .verticalScroll(rememberScrollState()),
                 ) {
-                    DeviceRow("自动（跟随系统）", outputDeviceId <= 0) {
+                    DeviceRow(stringResource(R.string.auto_follow_system), outputDeviceId <= 0) {
                         outputDeviceId = -1
                         settings.audioOutputDeviceId = -1
                         showDeviceDialog = false
                         changed()
                     }
                     devices.forEach { d ->
-                        DeviceRow(deviceLabel(d), outputDeviceId == d.id) {
+                        DeviceRow(localizedDeviceLabel(d), outputDeviceId == d.id) {
                             outputDeviceId = d.id
                             settings.audioOutputDeviceId = d.id
                             showDeviceDialog = false
@@ -347,20 +354,20 @@ fun OutputScreen(onBack: () -> Unit, onOutputChanged: () -> Unit = {}) {
                 }
             },
             confirmButton = {
-                TextButton(onClick = { showDeviceDialog = false }) { Text("取消") }
+                TextButton(onClick = { showDeviceDialog = false }) { Text(stringResource(R.string.cancel)) }
             },
         )
     }
     if (showModeDialog) {
         AlertDialog(
             onDismissRequest = { showModeDialog = false },
-            title = { Text("输出模式") },
+            title = { Text(stringResource(R.string.output_mode)) },
             text = {
                 Column {
                     listOf(
-                        "系统（AudioTrack，兼容优先）" to "system",
-                        "AAudio（Oboe）" to "aaudio",
-                        "OpenSL ES（Oboe 兼容后端）" to "opensles",
+                        stringResource(R.string.mode_system_alt) to "system",
+                        stringResource(R.string.mode_aaudio) to "aaudio",
+                        stringResource(R.string.mode_opensles_alt) to "opensles",
                     ).forEach { (label, v) ->
                         Row(
                             Modifier
@@ -380,7 +387,7 @@ fun OutputScreen(onBack: () -> Unit, onOutputChanged: () -> Unit = {}) {
                 }
             },
             confirmButton = {
-                TextButton(onClick = { showModeDialog = false }) { Text("取消") }
+                TextButton(onClick = { showModeDialog = false }) { Text(stringResource(R.string.cancel)) }
             },
         )
     }
@@ -399,19 +406,27 @@ private fun InfoLine(label: String, value: String) {
 }
 
 /** 当前音频实际走哪个输出设备（取第一个激活的 sink，优先非内置设备） */
-private fun deviceLabel(d: android.media.AudioDeviceInfo): String {
+@Composable
+private fun localizedDeviceLabel(d: android.media.AudioDeviceInfo): String {
     val name = d.productName?.toString()?.takeIf { it.isNotBlank() } ?: ""
     val type = when (d.type) {
         android.media.AudioDeviceInfo.TYPE_USB_DEVICE,
         android.media.AudioDeviceInfo.TYPE_USB_HEADSET,
-        android.media.AudioDeviceInfo.TYPE_USB_ACCESSORY -> "USB DAC"
-        android.media.AudioDeviceInfo.TYPE_WIRED_HEADPHONES -> "有线耳机"
-        android.media.AudioDeviceInfo.TYPE_WIRED_HEADSET -> "有线耳麦"
-        android.media.AudioDeviceInfo.TYPE_BLUETOOTH_A2DP -> "蓝牙音频"
-        android.media.AudioDeviceInfo.TYPE_BUILTIN_SPEAKER -> "扬声器"
-        else -> "设备"
+        android.media.AudioDeviceInfo.TYPE_USB_ACCESSORY -> stringResource(R.string.usb_dac)
+        android.media.AudioDeviceInfo.TYPE_WIRED_HEADPHONES -> stringResource(R.string.wired_headphones)
+        android.media.AudioDeviceInfo.TYPE_WIRED_HEADSET -> stringResource(R.string.wired_headset)
+        android.media.AudioDeviceInfo.TYPE_BLUETOOTH_A2DP -> stringResource(R.string.bluetooth_audio)
+        android.media.AudioDeviceInfo.TYPE_BUILTIN_SPEAKER -> stringResource(R.string.speaker)
+        else -> stringResource(R.string.device)
     }
     return if (name.isNotBlank()) "$type · $name" else type
+}
+
+@Composable
+private fun localizedEncoding(encoding: String): String = when (encoding) {
+    "未初始化" -> stringResource(R.string.not_initialized)
+    "其他" -> stringResource(R.string.other)
+    else -> encoding
 }
 
 @Composable
@@ -424,34 +439,5 @@ private fun DeviceRow(label: String, checked: Boolean, onClick: () -> Unit) {
     ) {
         Text(label, fontSize = 15.sp, color = TextPrimary, modifier = Modifier.weight(1f))
         if (checked) Text("✓", color = SamsungBlue, fontSize = 15.sp)
-    }
-}
-
-private fun currentOutputDevice(am: AudioManager): String {
-    return try {
-        val sinks = am.getDevices(AudioManager.GET_DEVICES_OUTPUTS).filter { it.isSink }
-        val preferred = sinks.firstOrNull {
-            it.type == AudioDeviceInfo.TYPE_USB_DEVICE ||
-                it.type == AudioDeviceInfo.TYPE_USB_HEADSET ||
-                it.type == AudioDeviceInfo.TYPE_USB_ACCESSORY
-        } ?: sinks.firstOrNull {
-            it.type == AudioDeviceInfo.TYPE_WIRED_HEADPHONES ||
-                it.type == AudioDeviceInfo.TYPE_WIRED_HEADSET ||
-                it.type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP
-        } ?: sinks.firstOrNull()
-        when (preferred?.type) {
-            AudioDeviceInfo.TYPE_USB_DEVICE,
-            AudioDeviceInfo.TYPE_USB_HEADSET,
-            AudioDeviceInfo.TYPE_USB_ACCESSORY -> "USB 音频设备（DAC）"
-            AudioDeviceInfo.TYPE_WIRED_HEADPHONES -> "有线耳机"
-            AudioDeviceInfo.TYPE_WIRED_HEADSET -> "有线耳麦"
-            AudioDeviceInfo.TYPE_BLUETOOTH_A2DP -> "蓝牙音频"
-            AudioDeviceInfo.TYPE_BUILTIN_SPEAKER -> "扬声器"
-            AudioDeviceInfo.TYPE_TELEPHONY -> "听筒"
-            null -> "未知"
-            else -> "其他设备 (type=${preferred.type})"
-        }
-    } catch (t: Throwable) {
-        "未知"
     }
 }

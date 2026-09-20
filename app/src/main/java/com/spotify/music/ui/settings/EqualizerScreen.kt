@@ -47,6 +47,8 @@ import com.spotify.music.ui.theme.SamsungBlue
 import com.spotify.music.ui.theme.TextPrimary
 import com.spotify.music.ui.theme.TextSecondary
 import kotlin.math.roundToInt
+import androidx.compose.ui.res.stringResource
+import com.spotify.music.R
 
 /**
  * 10 段软件均衡器（版式对齐 Halcyon）：
@@ -101,7 +103,7 @@ fun EqualizerScreen(
                     .clickable { onBack() }
                     .padding(end = 12.dp),
             )
-            Text("均衡器", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = SamsungBlue)
+            Text(stringResource(R.string.equalizer), fontSize = 22.sp, fontWeight = FontWeight.Bold, color = SamsungBlue)
         }
 
         // ── 主卡片 ──
@@ -114,8 +116,8 @@ fun EqualizerScreen(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Column(Modifier.weight(1f)) {
-                    Text("启用均衡器", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
-                    Text("软件 DSP 实时处理，不依赖系统音效", fontSize = 12.sp, color = TextSecondary)
+                    Text(stringResource(R.string.eq_enabled), fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
+                    Text(stringResource(R.string.eq_subtitle), fontSize = 12.sp, color = TextSecondary)
                 }
                 Switch(
                     checked = enabled,
@@ -129,7 +131,7 @@ fun EqualizerScreen(
             Divider()
 
             // 前置增益
-            LabeledSlider("前置增益", preamp, -6f, 6f, "%+.0f dB", "%+.1f dB") {
+            LabeledSlider(stringResource(R.string.preamp), preamp, -6f, 6f, "%+.0f dB", "%+.1f dB") {
                 preamp = (it * 2).toInt() / 2f; apply()
             }
             Divider()
@@ -180,15 +182,15 @@ fun EqualizerScreen(
             Divider()
 
             // 低音 / 高音 / 环绕 / 总增益
-            LabeledSlider("低音", bass, -12f, 12f, "%+.0f dB @100Hz", "%+.1f dB @100Hz") {
+            LabeledSlider(stringResource(R.string.bass), bass, -12f, 12f, "%+.0f dB @100Hz", "%+.1f dB @100Hz") {
                 bass = (it * 2).roundToInt() / 2f; apply()
             }
             Divider()
-            LabeledSlider("高音", treble, -12f, 12f, "%+.0f dB @6kHz", "%+.1f dB @6kHz") {
+            LabeledSlider(stringResource(R.string.treble), treble, -12f, 12f, "%+.0f dB @6kHz", "%+.1f dB @6kHz") {
                 treble = (it * 2).roundToInt() / 2f; apply()
             }
             Divider()
-            LabeledSlider("环绕增强", width * 100f, 0f, 100f, "%.0f%%", "%.0f%%") {
+            LabeledSlider(stringResource(R.string.surround), width * 100f, 0f, 100f, "%.0f%%", "%.0f%%") {
                 width = it.roundToInt() / 100f; apply()
             }
 
@@ -207,8 +209,8 @@ fun EqualizerScreen(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Column(Modifier.weight(1f)) {
-                    Text("重置", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
-                    Text("所有频段归零", fontSize = 12.sp, color = TextSecondary)
+                    Text(stringResource(R.string.reset), fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
+                    Text(stringResource(R.string.reset_all), fontSize = 12.sp, color = TextSecondary)
                 }
                 Text("›", fontSize = 20.sp, color = TextSecondary)
             }
@@ -226,7 +228,7 @@ fun EqualizerScreen(
                 EqState.PRESETS.forEach { (name, values) ->
                     val active = bands.contentEquals(values)
                     Text(
-                        name,
+                        presetLabel(name),
                         fontSize = 14.sp,
                         color = if (active) Color.White else TextPrimary,
                         modifier = Modifier
@@ -244,7 +246,7 @@ fun EqualizerScreen(
         }
 
         Text(
-            "调整即时生效（系统 / AAudio 原生两种输出模式均已接入 DSP）",
+            stringResource(R.string.eq_note),
             fontSize = 12.sp,
             color = TextSecondary,
             modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp),
@@ -298,4 +300,16 @@ private fun bandLabel(f: Float): String =
 private fun bandDbLabel(v: Float): String {
     val r = (v * 2).roundToInt() / 2f
     return if (r == 0f) "0" else "%+.0f".format(r)
+}
+
+@Composable
+private fun presetLabel(name: String): String = when (name) {
+    "平直" -> stringResource(R.string.eq_flat)
+    "流行" -> stringResource(R.string.eq_pop)
+    "摇滚" -> stringResource(R.string.eq_rock)
+    "爵士" -> stringResource(R.string.eq_jazz)
+    "古典" -> stringResource(R.string.eq_classical)
+    "电子" -> stringResource(R.string.eq_electronic)
+    "人声" -> stringResource(R.string.eq_vocal)
+    else -> name
 }

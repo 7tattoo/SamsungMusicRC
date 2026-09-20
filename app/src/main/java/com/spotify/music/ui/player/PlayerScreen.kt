@@ -74,6 +74,8 @@ import com.spotify.music.data.LibraryRepository
 import com.spotify.music.data.SettingsRepository
 import com.spotify.music.playback.PlaybackClient
 import com.spotify.music.ui.PlayerUiState
+import com.spotify.music.ui.albumDisplay
+import com.spotify.music.ui.artistDisplay
 import com.spotify.music.ui.components.AlbumArt
 import com.spotify.music.ui.components.EqualizerIcon
 import com.spotify.music.ui.components.LyricsToggleIcon
@@ -87,6 +89,8 @@ import com.spotify.music.ui.theme.OrangeDot
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import androidx.compose.ui.res.stringResource
+import com.spotify.music.R
 
 /**
  * 播放页：竖屏（手机）/ 横屏（车机投屏）双布局，按长宽比自动切换。
@@ -226,7 +230,7 @@ private fun PortraitPlayer(
 
         if (!showLyrics) {
             Text(
-                song?.title ?: "未在播放",
+                song?.title ?: stringResource(R.string.not_playing),
                 fontSize = 22.sp,
                 fontWeight = FontWeight.Bold,
                 color = Color(0xFF1B1B1F),
@@ -236,7 +240,7 @@ private fun PortraitPlayer(
                 modifier = Modifier.fillMaxWidth(),
             )
             Text(
-                song?.artist ?: "",
+                song?.let { artistDisplay(it.artist) } ?: "",
                 fontSize = 13.sp,
                 color = Color(0xFF5B5B66),
                 textAlign = TextAlign.Center,
@@ -403,7 +407,7 @@ private fun LandscapePlayer(
             ) {
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    song?.title ?: "未在播放",
+                    song?.title ?: stringResource(R.string.not_playing),
                     fontSize = 20.sp,
                     fontWeight = FontWeight.Bold,
                     color = Color(0xFF1B1B1F),
@@ -415,7 +419,7 @@ private fun LandscapePlayer(
                         .basicMarquee(),
                 )
                 Text(
-                    song?.artist ?: "",
+                    song?.let { artistDisplay(it.artist) } ?: "",
                     fontSize = 12.sp,
                     color = Color(0xFF5B5B66),
                     maxLines = 1,
@@ -484,7 +488,7 @@ private fun PlayerTopBar(
     ) {
         Icon(
             imageVector = Icons.Filled.KeyboardArrowDown,
-            contentDescription = "收起",
+            contentDescription = stringResource(R.string.collapse),
             tint = Color(0xFF2A2A32),
             modifier = Modifier
                 .size(30.dp)
@@ -507,7 +511,7 @@ private fun PlayerTopBar(
         Box {
             Icon(
                 Icons.Filled.MoreVert,
-                contentDescription = "菜单",
+                contentDescription = stringResource(R.string.menu),
                 tint = Color(0xFF2A2A32),
                 modifier = Modifier.clickable { showMenu = true },
             )
@@ -541,24 +545,24 @@ private fun PlayerTopBar(
     if (showDeleteConfirm && song != null) {
         AlertDialog(
             onDismissRequest = { showDeleteConfirm = false },
-            title = { Text("删除歌曲") },
-            text = { Text("确定从设备中删除「${song.title}」吗？") },
+            title = { Text(stringResource(R.string.delete_song)) },
+            text = { Text(stringResource(R.string.delete_confirm, song.title)) },
             confirmButton = {
                 TextButton(onClick = {
                     val ok = java.io.File(song.path).delete()
                     Toast.makeText(
                         context,
-                        if (ok) "已删除" else "删除失败（可能没有文件管理权限）",
+                        if (ok) context.getString(R.string.deleted) else context.getString(R.string.delete_failed),
                         Toast.LENGTH_SHORT,
                     ).show()
                     showDeleteConfirm = false
                     if (ok) {
                         LyricsLoader.invalidate(song.path)
                     }
-                }) { Text("删除") }
+                }) { Text(stringResource(R.string.delete)) }
             },
             dismissButton = {
-                TextButton(onClick = { showDeleteConfirm = false }) { Text("取消") }
+                TextButton(onClick = { showDeleteConfirm = false }) { Text(stringResource(R.string.cancel)) }
             },
         )
     }
@@ -583,21 +587,21 @@ private fun PlayerDropdownMenu(
             .clip(RoundedCornerShape(16.dp))
             .background(Color.White),
     ) {
-        MenuItem("删除") { onDelete(); onDismiss() }
-        MenuItem("分享") {
+        MenuItem(stringResource(R.string.delete)) { onDelete(); onDismiss() }
+        MenuItem(stringResource(R.string.share)) {
             onDismiss()
             shareSong(context, song)
         }
-        MenuItem("歌曲详情") { onDetails(); onDismiss() }
-        MenuItem("专辑") { onAlbum(); onDismiss() }
-        MenuItem("歌手") { onArtist(); onDismiss() }
-        MenuItem("设置为") {
+        MenuItem(stringResource(R.string.song_details)) { onDetails(); onDismiss() }
+        MenuItem(stringResource(R.string.album_label)) { onAlbum(); onDismiss() }
+        MenuItem(stringResource(R.string.artist_label)) { onArtist(); onDismiss() }
+        MenuItem(stringResource(R.string.set_as)) {
             onDismiss()
             openRingtonePicker(context, song)
         }
         Box {
             androidx.compose.material3.DropdownMenuItem(
-                text = { Text("设置", fontSize = 16.sp) },
+                text = { Text(stringResource(R.string.settings), fontSize = 16.sp) },
                 onClick = { onSettings(); onDismiss() },
             )
             Box(
@@ -642,7 +646,7 @@ private fun VolumePopup(onDismiss: () -> Unit) {
                 .background(Color.White)
                 .padding(16.dp),
         ) {
-            Text("音量  $volume/$max", fontSize = 14.sp, color = Color(0xFF1B1B1F))
+            Text(stringResource(R.string.volume_title, volume, max), fontSize = 14.sp, color = Color(0xFF1B1B1F))
             Slider(
                 value = volume / max.toFloat(),
                 onValueChange = {
@@ -681,7 +685,7 @@ private fun IconActionRow(
         )
         Icon(
             if (isFavorite) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
-            contentDescription = "收藏",
+            contentDescription = stringResource(R.string.favorite),
             tint = if (isFavorite) Color(0xFFE06070) else tint,
             modifier = Modifier.clickable {
                 if (song != null) settings.toggleFavorite(song.path)
@@ -768,7 +772,7 @@ private fun TransportControls(
     ) {
         Icon(
             Icons.Filled.Shuffle,
-            contentDescription = "随机播放",
+            contentDescription = stringResource(R.string.shuffle),
             tint = if (uiState.shuffleEnabled) LyricHighlight else tint,
             modifier = Modifier
                 .size(22.dp)
@@ -779,7 +783,7 @@ private fun TransportControls(
         )
         Icon(
             Icons.Filled.SkipPrevious,
-            contentDescription = "上一首",
+            contentDescription = stringResource(R.string.prev),
             tint = tint,
             modifier = Modifier
                 .size(skipSize)
@@ -787,7 +791,7 @@ private fun TransportControls(
         )
         Icon(
             if (uiState.isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-            contentDescription = "播放/暂停",
+            contentDescription = stringResource(R.string.play_pause),
             tint = tint,
             modifier = Modifier
                 .size(playSize)
@@ -795,7 +799,7 @@ private fun TransportControls(
         )
         Icon(
             Icons.Filled.SkipNext,
-            contentDescription = "下一首",
+            contentDescription = stringResource(R.string.next),
             tint = tint,
             modifier = Modifier
                 .size(skipSize)
@@ -827,7 +831,7 @@ fun QueueSheet(
     }
     androidx.compose.material3.ModalBottomSheet(onDismissRequest = onDismiss) {
         Text(
-            "播放队列（${paths.size}首）",
+            stringResource(R.string.queue_title, paths.size),
             fontSize = 16.sp,
             fontWeight = FontWeight.Bold,
             modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
@@ -864,7 +868,7 @@ fun QueueSheet(
                             overflow = TextOverflow.Ellipsis,
                         )
                         Text(
-                            s?.artist ?: "",
+                            s?.let { artistDisplay(it.artist) } ?: "",
                             fontSize = 11.sp,
                             color = Color(0xFF83838C),
                             maxLines = 1,
@@ -891,7 +895,7 @@ private fun AddToPlaylistSheet(
     val context = LocalContext.current
     androidx.compose.material3.ModalBottomSheet(onDismissRequest = onDismiss) {
         Text(
-            "添加到播放列表",
+            stringResource(R.string.add_to_playlist),
             fontSize = 16.sp,
             fontWeight = FontWeight.Bold,
             modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
@@ -900,11 +904,11 @@ private fun AddToPlaylistSheet(
             itemsIndexed(playlists) { i, (name, paths) ->
                 androidx.compose.material3.ListItem(
                     headlineContent = { Text(name) },
-                    supportingContent = { Text("${paths.size} 首") },
+                    supportingContent = { Text(stringResource(R.string.songs_count, paths.size)) },
                     modifier = Modifier.clickable {
                         if (!paths.contains(song.path)) paths.add(song.path)
                         settings.savePlaylists(playlists.map { it.first to it.second })
-                        Toast.makeText(context, "已添加", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, context.getString(R.string.added), Toast.LENGTH_SHORT).show()
                         onDismiss()
                     },
                 )
@@ -919,7 +923,7 @@ private fun AddToPlaylistSheet(
                     androidx.compose.material3.OutlinedTextField(
                         value = newName,
                         onValueChange = { newName = it },
-                        placeholder = { Text("新建播放列表名称") },
+                        placeholder = { Text(stringResource(R.string.new_playlist_name)) },
                         modifier = Modifier.weight(1f),
                     )
                     Spacer(Modifier.width(8.dp))
@@ -929,7 +933,7 @@ private fun AddToPlaylistSheet(
                             settings.savePlaylists(playlists.map { it.first to it.second })
                             onDismiss()
                         }
-                    }) { Text("创建") }
+                    }) { Text(stringResource(R.string.create)) }
                 }
             }
         }
@@ -940,20 +944,20 @@ private fun AddToPlaylistSheet(
 private fun SongDetailsDialog(song: Song, onDismiss: () -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("歌曲详情") },
+        title = { Text(stringResource(R.string.song_details)) },
         text = {
             Column {
-                DetailLine("标题", song.title)
-                DetailLine("歌手", song.artist)
-                DetailLine("专辑", song.album)
-                DetailLine("格式", song.fileName.substringAfterLast('.', "未知").uppercase())
-                DetailLine("时长", formatTime(song.durationMs))
-                DetailLine("大小", "%.1f MB".format(song.sizeBytes / 1024f / 1024f))
-                DetailLine("路径", song.path)
+                DetailLine(stringResource(R.string.title_label), song.title)
+                DetailLine(stringResource(R.string.artist_label), artistDisplay(song.artist))
+                DetailLine(stringResource(R.string.album_label), albumDisplay(song.album))
+                DetailLine(stringResource(R.string.format_label), song.fileName.substringAfterLast('.', stringResource(R.string.unknown)).uppercase())
+                DetailLine(stringResource(R.string.duration_label), formatTime(song.durationMs))
+                DetailLine(stringResource(R.string.size_label), "%.1f MB".format(song.sizeBytes / 1024f / 1024f))
+                DetailLine(stringResource(R.string.path_label), song.path)
             }
         },
         confirmButton = {
-            TextButton(onClick = onDismiss) { Text("关闭") }
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.close)) }
         },
     )
 }
@@ -986,11 +990,11 @@ private fun openRingtonePicker(context: android.content.Context, song: Song?) {
     try {
         val i = Intent(android.media.RingtoneManager.ACTION_RINGTONE_PICKER).apply {
             putExtra(android.media.RingtoneManager.EXTRA_RINGTONE_TYPE, android.media.RingtoneManager.TYPE_RINGTONE)
-            putExtra(android.media.RingtoneManager.EXTRA_RINGTONE_TITLE, "设置为铃声")
+            putExtra(android.media.RingtoneManager.EXTRA_RINGTONE_TITLE, context.getString(R.string.set_as_ringtone))
         }
         context.startActivity(i)
     } catch (t: Throwable) {
-        Toast.makeText(context, "无法打开铃声选择器", Toast.LENGTH_SHORT).show()
+        Toast.makeText(context, context.getString(R.string.ringtone_picker_failed), Toast.LENGTH_SHORT).show()
     }
 }
 
@@ -1006,9 +1010,9 @@ private fun shareSong(context: android.content.Context, song: Song?) {
             putExtra(Intent.EXTRA_STREAM, uri)
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
-        context.startActivity(Intent.createChooser(i, "分享歌曲"))
+        context.startActivity(Intent.createChooser(i, context.getString(R.string.share_song)))
     } catch (t: Throwable) {
-        Toast.makeText(context, "分享失败", Toast.LENGTH_SHORT).show()
+        Toast.makeText(context, context.getString(R.string.share_failed), Toast.LENGTH_SHORT).show()
     }
 }
 

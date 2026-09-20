@@ -29,6 +29,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.spotify.music.ui.theme.SamsungBlueDark
+import androidx.compose.ui.res.stringResource
+import com.spotify.music.R
 
 /**
  * 底部迷你播放条（深蓝圆角胶囊）。
@@ -108,7 +110,7 @@ fun MiniPlayer(
             // 仅封面与标题区域可打开播放页；右侧控制按钮独立点击，避免队列图标被整条吞掉。
             Icon(
                 Icons.Filled.SkipPrevious,
-                contentDescription = "上一首",
+                contentDescription = stringResource(R.string.prev),
                 tint = Color.White,
                 modifier = Modifier
                     .size(26.dp)
@@ -116,7 +118,7 @@ fun MiniPlayer(
             )
             Icon(
                 if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                contentDescription = "播放/暂停",
+                contentDescription = stringResource(R.string.play_pause),
                 tint = Color.White,
                 modifier = Modifier
                     .size(30.dp)
@@ -124,7 +126,7 @@ fun MiniPlayer(
             )
             Icon(
                 Icons.Filled.SkipNext,
-                contentDescription = "下一首",
+                contentDescription = stringResource(R.string.next),
                 tint = Color.White,
                 modifier = Modifier
                     .size(26.dp)

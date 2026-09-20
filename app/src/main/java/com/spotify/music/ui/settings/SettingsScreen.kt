@@ -47,6 +47,8 @@ import com.spotify.music.ui.theme.OrangeDot
 import com.spotify.music.ui.theme.SamsungBlue
 import com.spotify.music.ui.theme.TextPrimary
 import com.spotify.music.ui.theme.TextSecondary
+import androidx.compose.ui.res.stringResource
+import com.spotify.music.R
 
 /**
  * 三星音乐设置页（按 UI 截图 1-4 复刻）。
@@ -100,20 +102,20 @@ fun SettingsScreen(
                     .clickable { onBack() }
                     .padding(end = 12.dp),
             )
-            Text("三星音乐设置", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = SamsungBlue)
+            Text(stringResource(R.string.settings_title), fontSize = 22.sp, fontWeight = FontWeight.Bold, color = SamsungBlue)
         }
 
         // ── 播放 ──
-        SectionLabel("播放")
+        SectionLabel(stringResource(R.string.section_playback))
         SectionCard {
-            RowItem("睡眠定时器", if (sleepMinutes > 0) "${sleepMinutes}分钟后" else "关", accent = true) {
+            RowItem(stringResource(R.string.sleep_timer), if (sleepMinutes > 0) stringResource(R.string.sleep_in_minutes, sleepMinutes) else stringResource(R.string.off), accent = true) {
                 showSleepDialog = true
             }
             Divider()
             Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
-                Text("播放速度", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
+                Text(stringResource(R.string.playback_speed), fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
                 Text(
-                    "%.2f 倍".format(speed),
+                    stringResource(R.string.speed_x, speed),
                     fontSize = 15.sp,
                     color = SamsungBlue,
                     modifier = Modifier
@@ -134,9 +136,9 @@ fun SettingsScreen(
             }
             Divider()
             Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
-                Text("歌曲之间的淡入淡出", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
+                Text(stringResource(R.string.crossfade), fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
                 Text(
-                    if (crossfade <= 0) "关" else "$crossfade 秒",
+                    if (crossfade <= 0) stringResource(R.string.off) else stringResource(R.string.seconds, crossfade),
                     fontSize = 15.sp,
                     color = SamsungBlue,
                     modifier = Modifier
@@ -155,20 +157,20 @@ fun SettingsScreen(
                 )
             }
             Divider()
-            SwitchItem("跳过歌曲之间的无声时间", skipSilence) {
+            SwitchItem(stringResource(R.string.skip_silence), skipSilence) {
                 skipSilence = it
                 settings.skipSilence = it
                 client.setSkipSilence(it)
             }
             Divider()
-            SwitchItem("通过锁定屏幕控制音乐", lockscreen) {
+            SwitchItem(stringResource(R.string.lockscreen_control), lockscreen) {
                 lockscreen = it
                 settings.lockscreenControl = it
             }
             Divider()
             SwitchItem(
-                "息屏播放音乐",
-                "已连接耳机且屏幕关闭时，在锁定屏幕上播放音乐。",
+                stringResource(R.string.ambient_playback),
+                stringResource(R.string.ambient_desc),
                 ambient,
             ) {
                 ambient = it
@@ -177,41 +179,41 @@ fun SettingsScreen(
         }
 
         // 音效与输出分别作为一级大类，和 Halcyon 的设置结构保持一致。
-        SectionLabel("音效")
+        SectionLabel(stringResource(R.string.section_effects))
         SectionCard {
-            RowItem("均衡器", "10 段软件均衡器 · 低音/高音 · 环绕 · 总增益", accent = true) {
+            RowItem(stringResource(R.string.equalizer), stringResource(R.string.eq_row_desc), accent = true) {
                 onOpenEqualizer()
             }
         }
 
-        SectionLabel("输出")
+        SectionLabel(stringResource(R.string.section_output))
         SectionCard {
-            RowItem("输出通道", "输出设备、输出模式与实时音频参数", accent = true) {
+            RowItem(stringResource(R.string.output_channel), stringResource(R.string.output_row_desc), accent = true) {
                 onOpenOutput()
             }
         }
 
         // ── 播放列表 ──
-        SectionLabel("播放列表")
+        SectionLabel(stringResource(R.string.section_playlists))
         SectionCard {
-            RowItem("队列设置", "播放所有歌曲", accent = true) { showQueueDialog = true }
+            RowItem(stringResource(R.string.queue_settings), stringResource(R.string.play_all_songs), accent = true) { showQueueDialog = true }
             Divider()
-            SwitchItem("不允许重复歌曲", "不允许队列中有重复歌曲", noDup) {
+            SwitchItem(stringResource(R.string.no_duplicates), stringResource(R.string.no_duplicates_desc), noDup) {
                 noDup = it
                 settings.queueNoDuplicates = it
             }
             Divider()
-            RowItem("管理播放列表", showDot = manageDot) {
+            RowItem(stringResource(R.string.manage_playlists), showDot = manageDot) {
                 manageDot = false
             }
         }
 
         // ── 一般 ──
-        SectionLabel("一般")
+        SectionLabel(stringResource(R.string.section_general))
         SectionCard {
             SwitchItem(
-                "车载投屏歌词",
-                "开启后将当前歌曲歌词投送到vivo智能车载",
+                stringResource(R.string.car_lyrics),
+                stringResource(R.string.car_lyrics_desc),
                 carLyrics,
             ) {
                 carLyrics = it
@@ -221,8 +223,8 @@ fun SettingsScreen(
             }
             Divider()
             SwitchItem(
-                "与其他应用同时播放",
-                "开启后导航播报、其他应用播放声音时本应用不暂停(可能被压低音量)",
+                stringResource(R.string.concurrent_playback),
+                stringResource(R.string.concurrent_desc),
                 concurrent,
             ) {
                 concurrent = it
@@ -230,22 +232,22 @@ fun SettingsScreen(
                 client.applySettings()
             }
             Divider()
-            RowItem("管理标签", "收藏，播放列表，歌曲，专辑，歌手，文件夹", accent = true) {}
+            RowItem(stringResource(R.string.manage_tabs), stringResource(R.string.manage_tabs_desc), accent = true) {}
             Divider()
-            RowItem("黑暗模式", when (darkMode) { "dark" -> "深色"; "light" -> "浅色"; else -> "匹配手机设置" }, accent = true) {
+            RowItem(stringResource(R.string.dark_mode), when (darkMode) { "dark" -> stringResource(R.string.dark); "light" -> stringResource(R.string.light); else -> stringResource(R.string.match_system) }, accent = true) {
                 showDarkDialog = true
             }
             Divider()
-            SwitchItem("允许外部设备开始播放", externalStart) {
+            SwitchItem(stringResource(R.string.allow_external_start), externalStart) {
                 externalStart = it
                 settings.allowExternalStart = it
             }
         }
 
         // ── 隐私 ──
-        SectionLabel("隐私")
+        SectionLabel(stringResource(R.string.section_privacy))
         SectionCard {
-            RowItem("权限") {
+            RowItem(stringResource(R.string.permissions)) {
                 try {
                     context.startActivity(
                         Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
@@ -255,11 +257,11 @@ fun SettingsScreen(
                 }
             }
             Divider()
-            RowItem("扫描目录", "自定义扫描文件夹（含子文件夹）", accent = true) {
+            RowItem(stringResource(R.string.scan_dirs), stringResource(R.string.scan_dirs_desc), accent = true) {
                 onOpenScanDirs()
             }
             Divider()
-            RowItem("隐藏文件夹", "选择扫描结果中需要隐藏的文件夹", accent = true) {
+            RowItem(stringResource(R.string.hidden_folders), stringResource(R.string.hidden_folders_desc), accent = true) {
                 onOpenHiddenFolders()
             }
         }
@@ -269,8 +271,8 @@ fun SettingsScreen(
 
     if (showSleepDialog) {
         ChoiceDialog(
-            title = "睡眠定时器",
-            options = listOf("关" to 0, "5 分钟" to 5, "10 分钟" to 10, "15 分钟" to 15, "30 分钟" to 30, "60 分钟" to 60),
+            title = stringResource(R.string.sleep_timer),
+            options = listOf(stringResource(R.string.off) to 0, stringResource(R.string.minutes, 5) to 5, stringResource(R.string.minutes, 10) to 10, stringResource(R.string.minutes, 15) to 15, stringResource(R.string.minutes, 30) to 30, stringResource(R.string.minutes, 60) to 60),
             current = sleepMinutes,
             onSelect = {
                 sleepMinutes = it
@@ -281,8 +283,8 @@ fun SettingsScreen(
     }
     if (showDarkDialog) {
         ChoiceDialog(
-            title = "黑暗模式",
-            options = listOf("匹配手机设置" to "system", "浅色" to "light", "深色" to "dark"),
+            title = stringResource(R.string.dark_mode),
+            options = listOf(stringResource(R.string.match_system) to "system", stringResource(R.string.light) to "light", stringResource(R.string.dark) to "dark"),
             current = darkMode,
             onSelect = { darkMode = it; settings.darkMode = it },
             onDismiss = { showDarkDialog = false },
@@ -290,8 +292,8 @@ fun SettingsScreen(
     }
     if (showQueueDialog) {
         ChoiceDialog(
-            title = "队列设置",
-            options = listOf("播放所有歌曲" to 0, "仅播放当前列表" to 1),
+            title = stringResource(R.string.queue_settings),
+            options = listOf(stringResource(R.string.play_all_songs) to 0, stringResource(R.string.only_current_list) to 1),
             current = 0,
             onSelect = {},
             onDismiss = { showQueueDialog = false },
@@ -447,7 +449,7 @@ private fun <T> ChoiceDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = onDismiss) { Text("取消") }
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
         },
     )
 }
