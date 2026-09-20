@@ -113,6 +113,12 @@ class MainActivity : androidx.activity.ComponentActivity() {
         super.onResume()
         // 从系统「所有文件访问权限」页面返回后没有运行时权限回调，主动补一次首次扫描。
         if (settings.onboardingDone) maybeFirstScan()
+        // 回前台自动检测目录文件增删（只比对路径清单，零解析开销），变了才重扫。
+        if (settings.firstScanDone &&
+            !(needsAllFilesPermission() && !Environment.isExternalStorageManager())
+        ) {
+            lifecycleScope.launch(Dispatchers.IO) { library.rescanIfChanged() }
+        }
     }
 
     override fun onCreate(savedInstanceState: android.os.Bundle?) {
@@ -185,6 +191,10 @@ class MainActivity : androidx.activity.ComponentActivity() {
                     CrashLogger.trace("connect playback service OK")
                 }.onFailure { CrashLogger.log(it, "connect playback service") }
                 maybeFirstScan()
+                // 冷启动也做一次变更检测（下载新歌/文件管理器删歌后能自动更新曲库）
+                if (settings.firstScanDone) {
+                    lifecycleScope.launch(Dispatchers.IO) { library.rescanIfChanged() }
+                }
             }
 
             // 添加自定义扫描目录：SAF 目录选择器
@@ -254,12 +264,22 @@ class MainActivity : androidx.activity.ComponentActivity() {
                             Route.SETTINGS -> SettingsScreen(
                                 settings = settings,
                                 client = client,
+                                library = library,
                                 onBack = {
                                     darkMode = settings.darkMode
                                     route = Route.LIBRARY
                                 },
                                 onOpenScanDirs = { route = Route.SCAN_DIRS },
                                 onOpenHiddenFolders = { route = Route.HIDDEN_FOLDERS },
+                                onScanNow = {
+                                    Toast.makeText(this@MainActivity, getString(R.string.scan_started), Toast.LENGTH_SHORT).show()
+                                    lifecycleScope.launch(Dispatchers.IO) {
+                                        library.rescan()
+                                        withContext(Dispatchers.Main) {
+                                            Toast.makeText(this@MainActivity, getString(R.string.scan_done_toast), Toast.LENGTH_SHORT).show()
+                                        }
+                                    }
+                                },
                                 onOpenEqualizer = {
                                     equalizerReturn = Route.SETTINGS
                                     route = Route.EQUALIZER

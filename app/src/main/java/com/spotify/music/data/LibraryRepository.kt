@@ -77,6 +77,23 @@ class LibraryRepository private constructor(context: Context) {
         }
     }
 
+    /**
+     * 轻量变更检测：只收集当前音频文件清单与库里记录比对（不解析元数据），
+     * 有新增/删除才做完整重扫。供启动/回前台时自动调用，文件没变就零开销。
+     */
+    suspend fun rescanIfChanged(): Boolean {
+        if (_scanState.value == ScanState.SCANNING) return false
+        val changed = withContext(Dispatchers.IO) {
+            runCatching {
+                val known = db.songDao().getAll().mapTo(HashSet()) { it.path }
+                val found = HashSet<String>()
+                scanner.collectPaths { found.add(it) }
+                found != known
+            }.getOrDefault(false)
+        }
+        return if (changed) rescan() else false
+    }
+
     suspend fun hideFolder(folderPath: String) {
         val cur = settings.hiddenFolders.toMutableSet()
         cur.add(folderPath)

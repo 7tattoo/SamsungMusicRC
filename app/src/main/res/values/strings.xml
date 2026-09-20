@@ -149,6 +149,10 @@
     <string name="scan_dir_added">已添加扫描目录：%1$s</string>
     <string name="scan_dirs">扫描目录</string>
     <string name="scan_dirs_desc">自定义扫描文件夹（含子文件夹）</string>
+    <string name="scan_now">立即扫描</string>
+    <string name="scan_now_desc">重新扫描已添加的目录</string>
+    <string name="scan_started">开始扫描…</string>
+    <string name="scan_done_toast">扫描完成</string>
     <string name="scan_dirs_hint">默认目录为 /Music。添加的目录会递归扫描其所有子文件夹。修改后自动重新扫描。</string>
     <string name="search">搜索</string>
     <string name="seconds">%1$d 秒</string>

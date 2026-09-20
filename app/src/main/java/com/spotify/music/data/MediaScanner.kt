@@ -78,6 +78,36 @@ class MediaScanner(
         db.songDao().deleteByFolder(folderPath, "$folderPath/")
     }
 
+    /** 只收集音频文件绝对路径（与 scan 同一套递归/过滤规则），供变更检测使用 */
+    fun collectPaths(out: (String) -> Unit) {
+        val hidden = settings.hiddenFolders
+        for (dir in settings.scanDirs) {
+            val root = File(dir)
+            if (root.exists() && root.isDirectory) collectPathsRecursive(root, hidden, out, 0)
+        }
+    }
+
+    private fun collectPathsRecursive(dir: File, hidden: Set<String>, out: (String) -> Unit, depth: Int) {
+        if (depth > MAX_DEPTH) return
+        val canonical = try {
+            dir.canonicalPath
+        } catch (t: Throwable) {
+            dir.absolutePath
+        }
+        if (hidden.any { canonical == it || canonical.startsWith("$it/") }) return
+        val children = dir.listFiles() ?: return
+        for (child in children) {
+            if (child.isDirectory) {
+                val name = child.name
+                if (name.startsWith(".") || name in SKIP_DIR_NAMES) continue
+                collectPathsRecursive(child, hidden, out, depth + 1)
+            } else if (child.isFile && child.length() > 0) {
+                val ext = child.extension.lowercase()
+                if (ext in AUDIO_EXTENSIONS) out(child.absolutePath)
+            }
+        }
+    }
+
     private fun collectAudioFiles(dir: File, hidden: Set<String>, out: MutableList<File>, depth: Int = 0) {
         if (depth > MAX_DEPTH) return
         val canonical = try {

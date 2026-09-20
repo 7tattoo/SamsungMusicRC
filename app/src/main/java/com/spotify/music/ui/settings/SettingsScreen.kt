@@ -42,6 +42,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.spotify.music.data.SettingsRepository
+import com.spotify.music.data.LibraryRepository
 import com.spotify.music.playback.PlaybackClient
 import com.spotify.music.ui.theme.OrangeDot
 import com.spotify.music.ui.theme.SamsungBlue
@@ -49,6 +50,10 @@ import com.spotify.music.ui.theme.TextPrimary
 import com.spotify.music.ui.theme.TextSecondary
 import androidx.compose.ui.res.stringResource
 import com.spotify.music.R
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * 三星音乐设置页（按 UI 截图 1-4 复刻）。
@@ -57,6 +62,7 @@ import com.spotify.music.R
 fun SettingsScreen(
     settings: SettingsRepository,
     client: PlaybackClient,
+    library: LibraryRepository? = null,
     onBack: () -> Unit,
     onOpenScanDirs: () -> Unit,
     onOpenHiddenFolders: () -> Unit,
@@ -64,6 +70,7 @@ fun SettingsScreen(
     onOpenOutput: () -> Unit = {},
     onOpenManagePlaylists: () -> Unit = {},
     onOpenManageTabs: () -> Unit = {},
+    onScanNow: () -> Unit = {},
 ) {
     val context = LocalContext.current
     var sleepMinutes by remember { mutableIntStateOf(settings.sleepTimerMinutes) }
@@ -264,6 +271,10 @@ fun SettingsScreen(
             Divider()
             RowItem(stringResource(R.string.scan_dirs), stringResource(R.string.scan_dirs_desc), accent = true) {
                 onOpenScanDirs()
+            }
+            Divider()
+            RowItem(stringResource(R.string.scan_now), stringResource(R.string.scan_now_desc), accent = true) {
+                onScanNow()
             }
             Divider()
             RowItem(stringResource(R.string.hidden_folders), stringResource(R.string.hidden_folders_desc), accent = true) {

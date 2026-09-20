@@ -149,6 +149,10 @@
     <string name="scan_dir_added">Added scan directory: %1$s</string>
     <string name="scan_dirs">Scan folders</string>
     <string name="scan_dirs_desc">Custom scan folders (including subfolders)</string>
+    <string name="scan_now">Scan now</string>
+    <string name="scan_now_desc">Rescan the configured folders</string>
+    <string name="scan_started">Scanning…</string>
+    <string name="scan_done_toast">Scan finished</string>
     <string name="scan_dirs_hint">The default folder is /Music. Added folders are scanned recursively. Changes trigger an automatic rescan.</string>
     <string name="search">Search</string>
     <string name="seconds">%1$d s</string>
