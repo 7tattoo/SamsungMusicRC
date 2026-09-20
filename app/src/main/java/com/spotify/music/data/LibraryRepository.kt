@@ -14,6 +14,7 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.text.Collator
 import java.util.Locale
+import com.spotify.music.util.CrashLogger
 
 /** 资料库仓库：为 UI 与播放层提供统一数据入口 */
 class LibraryRepository private constructor(context: Context) {
@@ -60,15 +61,18 @@ class LibraryRepository private constructor(context: Context) {
         return paths.mapNotNull { all[it]?.toSong() }
     }
 
-    suspend fun rescan() {
-        if (_scanState.value == ScanState.SCANNING) return
-        withContext(Dispatchers.IO) {
+    suspend fun rescan(): Boolean {
+        if (_scanState.value == ScanState.SCANNING) return false
+        return withContext(Dispatchers.IO) {
             _scanState.value = ScanState.SCANNING
             try {
                 scanner.scan { p -> _scanProgress.value = p }
                 _scanState.value = ScanState.DONE
+                true
             } catch (t: Throwable) {
                 _scanState.value = ScanState.IDLE
+                CrashLogger.log(t, "library rescan")
+                false
             }
         }
     }

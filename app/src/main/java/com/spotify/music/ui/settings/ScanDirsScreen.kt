@@ -50,11 +50,12 @@ import com.spotify.music.R
 fun ScanDirsScreen(
     settings: SettingsRepository,
     library: LibraryRepository,
+    scanDirsVersion: Int = 0,
     onBack: () -> Unit,
     onPickDirectory: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
-    var dirs by remember { mutableStateOf(settings.scanDirs.toList()) }
+    var dirs by remember(scanDirsVersion) { mutableStateOf(settings.scanDirs.toList()) }
 
     fun rescan() {
         scope.launch {

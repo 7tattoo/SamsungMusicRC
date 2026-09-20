@@ -94,7 +94,10 @@ class MainActivity : androidx.activity.ComponentActivity() {
 
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
-    ) { /* 结果仅作参考：即使被拒，仍可依赖 MANAGE_EXTERNAL_STORAGE 扫描 */ }
+    ) {
+        // 权限对话框关闭后再补一次首次扫描；onContinue 触发时权限可能尚未生效。
+        maybeFirstScan()
+    }
 
     private fun requestRuntimePermissions() {
         val missing = requiredPermissions.filter {
@@ -104,6 +107,12 @@ class MainActivity : androidx.activity.ComponentActivity() {
             runCatching { permissionLauncher.launch(missing.toTypedArray()) }
                 .onFailure { CrashLogger.log(it, "requestRuntimePermissions") }
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // 从系统「所有文件访问权限」页面返回后没有运行时权限回调，主动补一次首次扫描。
+        if (settings.onboardingDone) maybeFirstScan()
     }
 
     override fun onCreate(savedInstanceState: android.os.Bundle?) {
@@ -209,11 +218,8 @@ class MainActivity : androidx.activity.ComponentActivity() {
                                 requestRuntimePermissions()
                                 settings.onboardingDone = true
                                 onboardingDone = true
-                                // 引导完成立即做首次扫描（此时媒体权限已请求）
-                                lifecycleScope.launch(Dispatchers.IO) {
-                                    runCatching { library.rescan() }
-                                    settings.firstScanDone = true
-                                }
+                                // 权限回调完成后由 maybeFirstScan() 触发；这里不抢跑、不提前标记完成。
+                                maybeFirstScan()
                             },
                         )
                     } else {
@@ -276,6 +282,7 @@ class MainActivity : androidx.activity.ComponentActivity() {
                                 settings = settings,
                                 library = library,
                                 onBack = { route = Route.SETTINGS },
+                                scanDirsVersion = scanDirsVersion,
                                 onPickDirectory = { treeLauncher.launch(null) },
                             )
                             Route.HIDDEN_FOLDERS -> HiddenFoldersScreen(
@@ -333,8 +340,7 @@ class MainActivity : androidx.activity.ComponentActivity() {
         if (settings.firstScanDone) return
         if (needsAllFilesPermission() && !Environment.isExternalStorageManager()) return
         lifecycleScope.launch(Dispatchers.IO) {
-            runCatching { library.rescan() }
-            settings.firstScanDone = true
+            if (library.rescan()) settings.firstScanDone = true
         }
     }
 }
