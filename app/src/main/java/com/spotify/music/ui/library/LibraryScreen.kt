@@ -4,6 +4,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -18,6 +20,9 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.itemsIndexed as gridItemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -60,6 +65,7 @@ import com.spotify.music.data.LibraryRepository
 import com.spotify.music.data.SettingsRepository
 import com.spotify.music.data.groupedAlbums
 import com.spotify.music.data.groupedArtists
+import com.spotify.music.data.sortedByMixedKey
 import com.spotify.music.data.sortedByMode
 import com.spotify.music.playback.PlaybackClient
 import com.spotify.music.ui.albumDisplay
@@ -727,68 +733,104 @@ private fun PlaylistsTab(
 @Composable
 private fun AlbumsTab(songs: List<Song>, client: PlaybackClient, onBrowse: (String) -> Unit) {
     val albums = remember(songs) { songs.groupedAlbums() }
-    LazyColumn(Modifier.fillMaxSize()) {
-        itemsIndexed(albums, key = { _, a -> a.name + a.artist }) { _, album ->
-            AlbumRow(album, client, onBrowse)
+    // 大图两列网格（参考 Samsung Music）：近方形大封面 + 圆角，下方歌名/歌手
+    LazyVerticalGrid(
+        columns = GridCells.Fixed(2),
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(start = 14.dp, end = 14.dp, top = 8.dp, bottom = 90.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalArrangement = Arrangement.spacedBy(18.dp),
+    ) {
+        gridItemsIndexed(albums, key = { _, a -> a.name + a.artist }) { _, album ->
+            AlbumCard(album, client, onBrowse)
         }
-        item { Spacer(Modifier.height(90.dp)) }
     }
 }
 
 @Composable
-private fun AlbumRow(album: AlbumGroup, client: PlaybackClient, onBrowse: (String) -> Unit) {
-    Row(
+private fun AlbumCard(album: AlbumGroup, client: PlaybackClient, onBrowse: (String) -> Unit) {
+    Column(
         Modifier
             .fillMaxWidth()
             .clickable {
                 com.spotify.music.util.CrashLogger.trace("CLICK album='${album.name}' songs=${album.songs.size}")
                 onBrowse(album.name)
-            }
-            .padding(horizontal = 14.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
+            },
     ) {
         AlbumArt(
             path = album.coverPath,
             modifier = Modifier
-                .size(52.dp)
-                .clip(RoundedCornerShape(8.dp)),
+                .fillMaxWidth()
+                .aspectRatio(1f)
+                .clip(RoundedCornerShape(14.dp)),
         )
-        Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
-            Text(albumDisplay(album.name), fontSize = 15.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(artistDisplay(album.artist), fontSize = 12.sp, color = TextSecondary, maxLines = 1)
-        }
-        Text(stringResource(R.string.songs_count, album.songs.size), fontSize = 12.sp, color = TextSecondary)
+        Spacer(Modifier.height(8.dp))
+        Text(
+            albumDisplay(album.name),
+            fontSize = 14.sp,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Text(
+            artistDisplay(album.artist),
+            fontSize = 12.sp,
+            color = TextSecondary,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 
 @Composable
 private fun ArtistsTab(songs: List<Song>, client: PlaybackClient, onBrowse: (String) -> Unit) {
-    val artists = remember(songs) { songs.groupedArtists() }
-    LazyColumn(Modifier.fillMaxSize()) {
-        itemsIndexed(artists, key = { _, a -> a.name }) { _, artist ->
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .clickable {
-                        com.spotify.music.util.CrashLogger.trace("CLICK artist='${artist.name}' songs=${artist.songs.size}")
-                        onBrowse(artist.name)
+    // 中英混拼（英文在前、中文按拼音跟随）后按首字母挂 A-Z 条
+    val artists = remember(songs) {
+        songs.groupedArtists().sortedByMixedKey { it.name }
+    }
+    val listState = rememberLazyListState()
+    val scope = rememberCoroutineScope()
+    var hoverLetter by remember { mutableStateOf<Char?>(null) }
+
+    Box(Modifier.fillMaxSize()) {
+        LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
+            itemsIndexed(artists, key = { _, a -> a.name }) { _, artist ->
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .clickable {
+                            com.spotify.music.util.CrashLogger.trace("CLICK artist='${artist.name}' songs=${artist.songs.size}")
+                            onBrowse(artist.name)
+                        }
+                        .padding(horizontal = 14.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    AlbumArt(
+                        path = artist.coverPath,
+                        modifier = Modifier
+                            .size(52.dp)
+                            .clip(CircleShape),
+                    )
+                    Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
+                        Text(artistDisplay(artist.name), fontSize = 15.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                        Text(stringResource(R.string.artist_info, artist.albumCount, artist.songCount), fontSize = 12.sp, color = TextSecondary)
                     }
-                    .padding(horizontal = 14.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                AlbumArt(
-                    path = artist.coverPath,
-                    modifier = Modifier
-                        .size(52.dp)
-                        .clip(CircleShape),
-                )
-                Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
-                    Text(artistDisplay(artist.name), fontSize = 15.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
-                    Text(stringResource(R.string.artist_info, artist.albumCount, artist.songCount), fontSize = 12.sp, color = TextSecondary)
                 }
             }
+            item { Spacer(Modifier.height(90.dp)) }
         }
-        item { Spacer(Modifier.height(90.dp)) }
+        AzScrollbar(
+            modifier = Modifier.align(Alignment.CenterEnd),
+            enabledLetters = artists.groupBy { letterOfText(it.name) }.keys,
+            onHoverLetter = { hoverLetter = it },
+        ) { letter ->
+            val idx = artists.indexOfFirst { letterOfText(it.name) == letter }
+            if (idx >= 0) scope.launch { listState.scrollToItem(idx) }
+        }
+        val hover = hoverLetter
+        if (hover != null) {
+            AzBubble(hover, Modifier.align(Alignment.Center))
+        }
     }
 }
 

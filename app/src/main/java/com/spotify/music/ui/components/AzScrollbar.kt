@@ -150,7 +150,21 @@ fun AzBubble(
 }
 
 fun letterOfText(text: String): Char {
-    val first = text.trim().firstOrNull() ?: return '#'
+    val t = text.trim()
+    val first = t.firstOrNull() ?: return '#'
     val upper = first.uppercaseChar()
-    return if (upper in 'A'..'Z') upper else '#'
+    if (upper in 'A'..'Z') return upper
+    if (first.isDigit()) return '#'
+    // 中文等非拉丁文字：用 Locale.CHINA Collator（拼音序）做区间比较，
+    // 找到最大的 L 使 text >= L —— 即所属拼音段。与列表排序同一套规则。
+    return try {
+        val collator = java.text.Collator.getInstance(java.util.Locale.CHINA)
+        var last = 'a'
+        for (l in 'a'..'z') {
+            if (collator.compare(t, l.toString()) >= 0) last = l else break
+        }
+        last.uppercaseChar()
+    } catch (e: Throwable) {
+        '#'
+    }
 }
