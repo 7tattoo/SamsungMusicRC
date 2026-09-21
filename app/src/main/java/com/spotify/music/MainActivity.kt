@@ -294,9 +294,9 @@ class MainActivity : androidx.activity.ComponentActivity() {
                             )
                             Route.OUTPUT -> OutputScreen(
                                 onBack = { route = Route.SETTINGS },
-                                // Oboe/AudioTrack 后端不在运行中的 MediaSession 上热替换；
-                                // 保存设置，用户下次完整重启应用后由 PlaybackService 读取，避免车机进程被原生流重建杀掉。
-                                onOutputChanged = {},
+                                // 热重建输出链：CMD_REBUILD_OUTPUT 让服务端保留队列/进度/播放意图
+                                // 重建 ExoPlayer+Sink，模式/通道/采样率/位深立即生效，无需重启
+                                onOutputChanged = { client.rebuildAudioOutput() },
                             )
                             Route.SCAN_DIRS -> ScanDirsScreen(
                                 settings = settings,

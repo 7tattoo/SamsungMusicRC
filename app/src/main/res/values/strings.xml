@@ -117,14 +117,14 @@
     <string name="output_bit_depth_desc">AudioTrack 与 Oboe 后端均可选；自动模式使用 16bit 默认位深</string>
     <string name="output_bit_depth_title">输出位深</string>
     <string name="output_channel">输出通道</string>
-    <string name="output_channel_desc">指定输出到扬声器/耳机/USB DAC/蓝牙（AAudio 原生模式生效）</string>
+    <string name="output_channel_desc">指定输出到扬声器/耳机/USB DAC/蓝牙（所有输出模式生效）</string>
     <string name="output_device">输出设备</string>
     <string name="output_mode">输出模式</string>
     <string name="output_mode_desc">Halcyon Oboe 后端：可选 AAudio / OpenSL ES；USB DAC 独占需单独开启。</string>
     <string name="output_row_desc">输出设备、输出模式与实时音频参数</string>
     <string name="output_sample_rate">输出采样率</string>
     <string name="output_sample_rate_desc">自动跟随音源，或指定目标采样率（两种输出模式均生效）</string>
-    <string name="output_saved">输出设置已保存，请完全重启应用后生效</string>
+    <string name="output_saved">输出设置已保存，正在应用…</string>
     <string name="output_settings">输出设置</string>
     <string name="output_title">输出</string>
     <string name="path_label">路径</string>
@@ -201,6 +201,8 @@
     <string name="usb_audio_device">USB 音频设备（DAC）</string>
     <string name="usb_dac">USB DAC</string>
     <string name="usb_exclusive">USB DAC 独占模式</string>
+    <string name="usb_dac_fixed">检测到 USB DAC，已固定为本应用输出设备</string>
+    <string name="usb_dac_removed">USB DAC 已断开，恢复自动选择输出设备</string>
     <string name="usb_exclusive_desc">仅 AAudio 后端有效；不支持时 Oboe 自动使用共享模式</string>
     <string name="volume_title">音量  %1$d/%2$d</string>
     <string name="wired_headphones">有线耳机</string>

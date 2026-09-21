@@ -44,7 +44,8 @@ import com.spotify.music.R
  * 输出信息页：显示实时音频输出链路（设备 / 采样率 / 位深 / 声道 / 软件音效链）。
  * 数据来自 AudioProcessor onConfigure 的实际 PCM 参数 + AudioManager 当前输出设备。
  *
- * 输出参数变更后保存到设置；为避免车机原生音频流重建导致进程退出，需完整重启应用后生效。
+ * 输出参数变更后保存到设置，并通过 CMD_REBUILD_OUTPUT 通知 PlaybackService 热重建
+ * 音频输出链（保留队列/进度/播放意图），模式/通道/采样率/位深即时生效，无需重启。
  */
 @Composable
 fun OutputScreen(onBack: () -> Unit, onOutputChanged: () -> Unit = {}) {

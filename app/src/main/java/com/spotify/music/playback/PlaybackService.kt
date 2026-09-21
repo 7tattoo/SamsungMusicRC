@@ -3,6 +3,9 @@ package com.spotify.music.playback
 import android.app.PendingIntent
 import android.content.ComponentName
 import android.content.Intent
+import android.media.AudioDeviceInfo
+import android.media.AudioDeviceCallback
+import android.media.AudioManager
 import android.os.Bundle
 import android.os.SystemClock
 import androidx.media3.common.AudioAttributes
@@ -23,6 +26,7 @@ import com.google.common.collect.ImmutableList
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
 import com.spotify.music.MainActivity
+import com.spotify.music.R
 import com.spotify.music.core.lyrics.LyricsLoader
 import com.spotify.music.core.model.Lyrics
 import com.spotify.music.core.lyrics.LrcParser
@@ -56,6 +60,13 @@ class PlaybackService : MediaLibraryService() {
         const val CMD_TOGGLE_PLAY_PAUSE = "com.spotify.music.TOGGLE_PLAY_PAUSE"
         const val CMD_ARG_MINUTES = "minutes"
         const val CMD_ARG_ENABLED = "enabled"
+
+        /** 视为 USB DAC 的设备类型（标准 USB 音频 / USB 耳机 / USB 附件） */
+        private val USB_DAC_TYPES = setOf(
+            AudioDeviceInfo.TYPE_USB_DEVICE,
+            AudioDeviceInfo.TYPE_USB_HEADSET,
+            AudioDeviceInfo.TYPE_USB_ACCESSORY,
+        )
 
         /** 队列落盘节流间隔 */
         private const val SAVE_QUEUE_THROTTLE_MS = 3_000L
@@ -117,6 +128,7 @@ class PlaybackService : MediaLibraryService() {
 
         player = createPlayer()
         CrashLogger.trace("PlaybackService player created")
+        registerUsbDacAutoRoute()
 
         session = MediaLibrarySession.Builder(this, player, libraryCallback())
             .setSessionActivity(
@@ -273,11 +285,21 @@ class PlaybackService : MediaLibraryService() {
                         preferFloatWhenAutomatic = enableFloatOutput,
                     ),
                 )
-                return androidx.media3.exoplayer.audio.DefaultAudioSink.Builder(context)
+                val sink = androidx.media3.exoplayer.audio.DefaultAudioSink.Builder(context)
                     .setAudioProcessors(processors)
                     .setEnableFloatOutput(enableFloatOutput || settings.audioBitDepth == "float")
                     .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
                     .build()
+                // 输出通道固定在 system 模式同样生效（AudioTrack preferredDevice 路由）
+                settings.audioOutputDeviceId.takeIf { it > 0 }?.let { devId ->
+                    runCatching {
+                        (getSystemService(AUDIO_SERVICE) as AudioManager)
+                            .getDevices(AudioManager.GET_DEVICES_OUTPUTS)
+                            .firstOrNull { it.id == devId }
+                            ?.let { sink.setPreferredDevice(it) }
+                    }.onFailure { CrashLogger.log(it, "setPreferredDevice") }
+                }
+                return sink
             }
         }
         return ExoPlayer.Builder(this, renderersFactory)
@@ -294,6 +316,55 @@ class PlaybackService : MediaLibraryService() {
             // 会在异常上报路径上出岔子，我们用自己的 CrashLogger 取证即可
             .setUsePlatformDiagnostics(false)
             .build()
+    }
+
+    // ── USB DAC 自动路由 ──
+    // 插入 USB DAC（含耳机/附件形态）时自动把它固定为本应用输出设备；拔出恢复 auto。
+    // registerAudioDeviceCallback 注册后会立即回调一次现有设备清单，
+    // 所以"启动时已插着 DAC"的场景同样被覆盖（rebuild 一次即可，代价极小）。
+    private var audioDeviceCallback: AudioDeviceCallback? = null
+
+    private fun registerUsbDacAutoRoute() {
+        val am = getSystemService(AUDIO_SERVICE) as AudioManager
+        val cb = object : AudioDeviceCallback() {
+            override fun onAudioDevicesAdded(addedDevices: Array<out AudioDeviceInfo>) {
+                runCatching { handleUsbDacPlugged(addedDevices) }
+                    .onFailure { CrashLogger.log(it, "usbDac added") }
+            }
+
+            override fun onAudioDevicesRemoved(removedDevices: Array<out AudioDeviceInfo>) {
+                runCatching {
+                    val gone = removedDevices.firstOrNull {
+                        it.isSink && it.type in USB_DAC_TYPES
+                    } ?: return
+                    if (settings.audioOutputDeviceId != gone.id) return
+                    settings.audioOutputDeviceId = -1
+                    rebuildAudioOutput()
+                    android.widget.Toast.makeText(
+                        this@PlaybackService,
+                        getString(R.string.usb_dac_removed),
+                        android.widget.Toast.LENGTH_SHORT,
+                    ).show()
+                    CrashLogger.trace("usb dac removed -> output auto")
+                }.onFailure { CrashLogger.log(it, "usbDac removed") }
+            }
+        }
+        runCatching { am.registerAudioDeviceCallback(cb, null) }
+            .onSuccess { audioDeviceCallback = cb }
+            .onFailure { CrashLogger.log(it, "registerAudioDeviceCallback") }
+    }
+
+    private fun handleUsbDacPlugged(devices: Array<out AudioDeviceInfo>) {
+        val dac = devices.firstOrNull { it.isSink && it.type in USB_DAC_TYPES } ?: return
+        if (settings.audioOutputDeviceId == dac.id) return
+        settings.audioOutputDeviceId = dac.id
+        rebuildAudioOutput()
+        android.widget.Toast.makeText(
+            this@PlaybackService,
+            getString(R.string.usb_dac_fixed),
+            android.widget.Toast.LENGTH_SHORT,
+        ).show()
+        CrashLogger.trace("usb dac id=${dac.id} fixed as output, rebuilt")
     }
 
     /** Rebuild the renderer/sink while retaining the current queue, position, and play intent. */
@@ -869,6 +940,12 @@ class PlaybackService : MediaLibraryService() {
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaLibrarySession? = session
 
     override fun onDestroy() {
+        audioDeviceCallback?.let {
+            runCatching {
+                (getSystemService(AUDIO_SERVICE) as AudioManager).unregisterAudioDeviceCallback(it)
+            }
+            audioDeviceCallback = null
+        }
         flushLastQueueSync()
         saveLastQueue(force = true)
         sleepTimerJob?.cancel()
