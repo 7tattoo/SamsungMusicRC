@@ -137,7 +137,9 @@ fun PlayerScreen(
             ),
     ) {
         BoxWithConstraints(Modifier.fillMaxSize()) {
-            val isLandscape = maxWidth > maxHeight
+            // 用宽高比阈值而非简单宽>高：类方屏（880×760 ratio≈1.02）不该走为宽屏车机
+            // 设计的左右分栏布局，ratio > 1.2 才算真正横屏。
+            val isLandscape = maxWidth > maxHeight * 1.2f
             if (isLandscape) {
                 LandscapePlayer(uiState, client, settings, library, song, lyrics, onBack, onOpenSettings, onOpenEqualizer, onBrowseAlbum, onBrowseArtist, showQueue = uiState.showQueue)
             } else {
@@ -193,7 +195,7 @@ private fun PortraitPlayer(
         )
 
         // fillMaxWidth 必须加：Column 里 weight 只撑高度，横向会收缩成内容宽度贴左
-        Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+        BoxWithConstraints(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
             if (showLyrics) {
                 LyricsView(
                     lyrics = lyrics,
@@ -202,12 +204,16 @@ private fun PortraitPlayer(
                     onSeek = { client.seekTo(it) },
                 )
             } else {
+                // 封面尺寸按可用宽高自适应：手机窄屏宽度限制，方屏/宽屏高度限制
+                // maxWidth/maxHeight 是 BoxWithConstraintsScope 属性，必须在 Column 外层取
+                val coverByWidth = maxWidth * 0.68f
+                val coverByHeight = maxHeight * 0.92f
+                val coverDp = if (coverByWidth < coverByHeight) coverByWidth else coverByHeight
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     AlbumArt(
                         path = song?.path,
                         modifier = Modifier
-                            .fillMaxWidth(0.68f)
-                            .aspectRatio(1f)
+                            .size(coverDp)
                             .shadow(12.dp, RoundedCornerShape(14.dp))
                             .clip(RoundedCornerShape(14.dp))
                             .clickable { showLyrics = true },
