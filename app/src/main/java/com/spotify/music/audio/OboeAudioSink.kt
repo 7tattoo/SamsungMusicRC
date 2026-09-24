@@ -154,7 +154,11 @@ class OboeAudioSink(
     }
 
     override fun play() {
-        // 暂停期间原生流是否还在消耗帧：delta>0 说明声音其实没停
+        // 暂停诊断照旧；同时无条件把原生流拉回 Started。EOS 无缝换歌（AUTO）路径
+        // ExoPlayer 不再回调 play()（playWhenReady 一直为 true），而 vivo OpenSL HAL
+        // 在 EOS 时会把流收进已停止状态（trace_8：AUTO 后无 stall/reopen，write
+        // 返回 0 被当反压吞掉，音乐「假播放」）。重入 requestStart 对已运行的流
+        // 是幂等操作，对已停止的流则把它救活 —— 两种情况都安全。
         if (pausedAtMs != 0L) {
             val delta = ((oboe?.framesRead() ?: 0L) - framesAtPause).coerceAtLeast(0L)
             val gap = android.os.SystemClock.uptimeMillis() - pausedAtMs
@@ -185,6 +189,10 @@ class OboeAudioSink(
     override fun handleDiscontinuity() {
         startMediaTimeUs = C.TIME_UNSET
         frameBase = oboe?.framesRead() ?: 0L
+        // EOS 无缝换歌（AUTO）后 ExoPlayer 不回调 play()；若 vivo OpenSL HAL 在 EOS
+        // 时已把流停掉，这里把它救活。streamActive 只在真正暂停时为 false，此时
+        // 绝不能 start（否则暂停会被复活）。AAudio 后端 requestStart 幂等，无副作用。
+        if (streamActive) oboe?.start()
     }
 
     @Throws(AudioSink.InitializationException::class, AudioSink.WriteException::class)
@@ -396,6 +404,15 @@ class OboeAudioSink(
             // 这不是「流楔死」。绝不能在暂停态重开/start 流——否则就是
             // 「手动暂停后，播放自己又复活」的 bug（trace: 暂停 8s 后 reopened）。
             if (!streamActive) return false
+            // EOS 无缝换歌后 HAL 可能把流停在已停止态（write 恒 0、无断开事件）。
+            // 播放意图仍在（streamActive=true）却完全写不进去：先试原地 start 自愈，
+            // 失败再走重开流的老路。修复「自动切歌后无声，方向盘切歌才恢复」。
+            if (stall == 3) {
+                oboe?.start()
+                CrashLogger.trace(
+                    "sink stall start-rescue attempt (stream stopped by HAL?) ${diagnoseStreamState()}"
+                )
+            }
             // 写超时 / 缓冲满：瞬态，让上层重试。连续多拍无进展则重开流防楔死。
             if (stall >= MAX_CONSECUTIVE_STALLS) {
                 stallCount = 0
@@ -458,6 +475,10 @@ class OboeAudioSink(
             false
         }
     }
+
+    /** 诊断锚点：HAL 停流自愈是否命中（stall==3 时触发，见 writeToOboe）。 */
+    private fun diagnoseStreamState(): String =
+        "framesRead=${oboe?.framesRead() ?: -1L} frameBase=$frameBase"
 
     private fun encodingToOboeId(encoding: Int): Int = when (encoding) {
         C.ENCODING_PCM_16BIT -> 0
