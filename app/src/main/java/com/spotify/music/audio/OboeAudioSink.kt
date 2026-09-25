@@ -61,6 +61,8 @@ class OboeAudioSink(
     private var actualSampleRate = 0
     // 连续写阻塞计数：超时/写 0 字节都是瞬态，连拍多下无进展才重开流。
     private var stallCount = 0
+    // handleBuffer 调用计数（EOS 无缝切歌诊断用，见 handleBuffer）
+    private var bufferCalls = 0L
 
     /** 播放器意图是否为播放。暂停期间禁止一切 stall 触发的流重开（否则暂停会被自己复活）。 */
     @Volatile private var streamActive = false
@@ -129,10 +131,21 @@ class OboeAudioSink(
 
         if (canReuse) {
             // Output is fixed-format for the native path. The preceding AudioSink.flush()
-            // resets Media3's pipeline; do not call native flush/pause/start here. Repeated
-            // native state transitions during a format callback are what make some firmware
-            // kill the process after several track changes.
+            // resets Media3's pipeline.
             pendingOutput = null
+            // EOS 无缝切歌（reason=AUTO）时 ExoPlayer 的渲染器不走 stop/restart：
+            // play() / pause() / handleDiscontinuity() 一次都不会被调用（trace_8：
+            // AUTO 后只有 sink configured，没有 sink pause / sink play），而 vivo
+            // OpenSL HAL 会在 EOS 时把流收进已停止态 —— 之后 write 恒 0、播放假在
+            // 跑（isPlaying=true）、无声。configure() 是 AUTO 路径上唯一必经的钩子，
+            // 在这里按当前播放意图把复用流拉回 Started。requestStart 对已运行的流
+            // 是幂等的（SEEK 路径已先经 play() 启动，此处重复一次无副作用）。
+            // streamActive 只在真正暂停时为 false：恢复队列/冷启动 configure 发生在
+            // play() 之前，此时绝不可 start，否则会重现「paused 态自己出声」。
+            if (streamActive) {
+                oboe?.start()
+                CrashLogger.trace("sink configured re-armed native stream (streamActive)")
+            }
         } else {
             oboe?.close()
             val output = OboeAudioOutput()
@@ -202,13 +215,29 @@ class OboeAudioSink(
             startMediaTimeUs = presentationTimeUs
         }
 
-        if (pipeline.isOperational) {
-            if (!drainPipeline()) return false
-            if (buffer.hasRemaining()) pipeline.queueInput(buffer)
-            if (!drainPipeline()) return false
-            return !buffer.hasRemaining()
+        val ok = if (pipeline.isOperational) {
+            if (!drainPipeline()) false
+            else {
+                if (buffer.hasRemaining()) pipeline.queueInput(buffer)
+                if (!drainPipeline()) false
+                else !buffer.hasRemaining()
+            }
+        } else {
+            writeDirect(buffer)
         }
-        return writeDirect(buffer)
+        // EOS 无缝切歌诊断：AUTO 后 ExoPlayer 不再回调 play()，这条路径完全靠
+        // handleBuffer 喂数据。统计喂入节奏与残留量，判断「无声」是渲染器停喂
+        // (handleBuffer 不再被调用) 还是缓冲消费不完 (residual 持续增长)。
+        // 限频：每次换歌后前若干次 + 之后每 200 次，避免日志淹没 trace 文件。
+        if (bufferCalls < 8L || bufferCalls % 200L == 0L) {
+            CrashLogger.trace(
+                "sink handleBuffer n=$bufferCalls input=${buffer.remaining()} " +
+                    "residual=${if (ok) 0 else buffer.remaining()} framesSubmitted=${framesSubmitted - frameBase} " +
+                    "pendingOut=${pendingOutput?.remaining() ?: 0} pipelineOp=${pipeline.isOperational}"
+            )
+        }
+        bufferCalls++
+        return ok
     }
 
     @Throws(AudioSink.WriteException::class)
@@ -277,6 +306,13 @@ class OboeAudioSink(
         // pause/flush here: on vivo firmware those transitions race with ExoPlayer's decoder
         // flush and eventually crash the process or make write() return 0 forever.
         resetPlaybackState()
+        // AUTO 无缝切歌诊断：flush 是渲染器换歌时的必经回调（onPositionReset → flush），
+        // 之前完全没有埋点，导致 trace 上「configure 之后一片空白」无法归因。
+        // 关键在 streamActive：false 表示此刻并非播放意图（恢复队列/冷启动）。
+        CrashLogger.trace(
+            "sink flush | streamActive=$streamActive framesRead=${oboe?.framesRead() ?: -1L} " +
+                "frameBase=$frameBase"
+        )
     }
 
     override fun reset() {
