@@ -160,6 +160,40 @@ Java_com_spotify_music_audio_OboeAudioOutput_nativePause(JNIEnv*, jobject, jlong
     }
 }
 
+JNIEXPORT jint JNICALL
+Java_com_spotify_music_audio_OboeAudioOutput_nativeGetState(JNIEnv*, jobject, jlong handle) {
+    auto* sink = reinterpret_cast<OboeSink*>(handle);
+    if (sink == nullptr || !sink->stream) return -1;
+    return static_cast<jint>(sink->stream->getState());
+}
+
+JNIEXPORT jlong JNICALL
+Java_com_spotify_music_audio_OboeAudioOutput_nativeFramesWritten(JNIEnv*, jobject, jlong handle) {
+    auto* sink = reinterpret_cast<OboeSink*>(handle);
+    if (sink == nullptr || !sink->stream) return -1L;
+    return sink->stream->getFramesWritten();
+}
+
+// 原子 Pause→Start：EOS 无缝切歌后 vivo OpenSL HAL 把当前 track 从输出混音器摘掉，
+// 句柄仍报 Started，此时 requestStart() 是空操作（只从 Stopped/Paused 迁移状态）。
+// 数据被收进已断开的 track：write 照常成功、无 stall、无超时，但不出声。
+// 必须在 native 内顺序执行 requestPause → waitForState(Paused) → requestStart；
+// 拆成两次 JNI 调用时中间没有状态同步，第二次 requestStart 会因流仍在 Transitioning
+// 被 HAL 拒收，等价于什么都没做。
+JNIEXPORT void JNICALL
+Java_com_spotify_music_audio_OboeAudioOutput_nativeRestart(JNIEnv*, jobject, jlong handle) {
+    auto* sink = reinterpret_cast<OboeSink*>(handle);
+    if (sink == nullptr || !sink->stream) return;
+    std::lock_guard<std::mutex> lock(sink->mutex);
+    auto state = sink->stream->getState();
+    if (state == oboe::StreamState::Paused || state == oboe::StreamState::Starting ||
+        state == oboe::StreamState::Pausing) return; // 已处理中
+    if (sink->stream->requestPause() != oboe::Result::OK) return;
+    oboe::StreamState nextState;
+    sink->stream->waitForStateChange(oboe::StreamState::Paused, &nextState, 200000000LL);
+    sink->stream->requestStart();
+}
+
 JNIEXPORT void JNICALL
 Java_com_spotify_music_audio_OboeAudioOutput_nativeStart(JNIEnv*, jobject, jlong handle) {
     auto* sink = reinterpret_cast<OboeSink*>(handle);

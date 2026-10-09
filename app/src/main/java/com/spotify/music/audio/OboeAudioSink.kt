@@ -143,8 +143,14 @@ class OboeAudioSink(
             // streamActive 只在真正暂停时为 false：恢复队列/冷启动 configure 发生在
             // play() 之前，此时绝不可 start，否则会重现「paused 态自己出声」。
             if (streamActive) {
-                oboe?.start()
-                CrashLogger.trace("sink configured re-armed native stream (streamActive)")
+                // EOS 无缝切歌后 vivo OpenSL HAL 把旧 track 从混音器摘掉，句柄仍报
+                // Started。此时 requestStart() 是空操作（只从 Stopped/Paused 迁移）；
+                // 数据写进已断开的 track 里不出声。必须原子地 pause→waitForState→start
+                // 让 HAL 重建音频路径。this 方法的 LoggingAudioSink 版本已由 DebugSink
+                // 负责，此处用 OboeAudioOutput.restart()。（nativeRestart 在 C++ 层持有
+                // mutex，不会与 write 线程的 nativeWrite 冲突。）
+                oboe?.restart()
+                CrashLogger.trace("sink configured re-armed native stream (restart)")
             }
         } else {
             oboe?.close()

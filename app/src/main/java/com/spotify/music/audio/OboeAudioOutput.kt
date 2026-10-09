@@ -39,6 +39,8 @@ class OboeAudioOutput {
     fun start() { if (handle != 0L) nativeStart(handle) }
     fun pause() { if (handle != 0L) nativePause(handle) }
     fun flush() { if (handle != 0L) nativeFlush(handle) }
+    /** 原子 Pause→Start：EOS 无缝切歌后 track 被 HAL 摘掉，单纯 start() 是空操作。 */
+    fun restart() { if (handle != 0L) nativeRestart(handle) }
 
     fun close() {
         if (handle != 0L) {
@@ -55,6 +57,7 @@ class OboeAudioOutput {
     private external fun nativeGetSampleRate(handle: Long): Int
     private external fun nativeStart(handle: Long)
     private external fun nativePause(handle: Long)
+    private external fun nativeRestart(handle: Long)
     private external fun nativeFlush(handle: Long)
     private external fun nativeClose(handle: Long)
 
