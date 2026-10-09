@@ -9,6 +9,7 @@
 - 最低系统：Android 8.0（API 26）｜目标：Android 15（API 35）｜ABI：arm64-v8a
 - 语言：简体中文 / English 跟随系统
 - 包名：`com.spotify.music`（车机与部分系统音乐入口按包名识别，故沿用；与官方 Samsung Music 无关）
+- 许可证：**Apache-2.0**（全文见 [LICENSE](LICENSE)，第三方组件声明见 [NOTICE](NOTICE)）
 
 ---
 
@@ -231,8 +232,8 @@ Releases 页提供已签名的 APK：
 | AndroidX Media3 (ExoPlayer) 1.11 | 播放内核、通知与锁屏、车机会话 |
 | Room 2.6 (SQLite) | 曲库、歌单、收藏、播放历史 |
 | [Oboe](https://github.com/google/oboe) 1.9 (C++/JNI) | AAudio / OpenSL ES 输出与 USB DAC 独占 |
-| Coil 2.7 | 封面加载与内存缓存 |
-| ICU4J | 中文拼音排序 |
+| 自研 `CoverLoader`（MediaMetadataRetriever + LruCache） | 封面提取、按需降采样与内存缓存 |
+| `java.text.Collator` + 内置拼音首字表 | 曲名 A–Z 索引与中文排序 |
 
 纯 Kotlin + 一层 C++，无 Retrofit/无埋点/无广告；清单里**没有 `INTERNET` 权限**，
 抓包可以看到它一个字节都不往外发。
@@ -260,9 +261,14 @@ Releases 页提供已签名的 APK：
 
 - 本项目为**非官方**爱好者作品，与三星电子无隶属或授权关系。"Samsung" / "Samsung Music" 为三星电子商标，
   本项目仅作界面设计参考。
-- 仓库当前**未附带 LICENSE 文件**，在法律上默认"保留所有权利"。源码公开仅供学习参考，
-  未经许可请勿二次分发或用于商业用途；如需明确授权，请联系作者补充许可证。
-- 项目仅供学习交流，请勿用于任何商业用途；因使用本软件造成的数据丢失、设备异常或流量费用，作者不承担责任。
+- 源码以 **Apache License 2.0** 授权（全文见 `LICENSE`）：可自由使用、修改、商用与二次分发，
+  条件是保留版权与许可副本、说明你做过改动；同时附带专利授权条款。
+- 本许可证**只覆盖本仓库的代码**，不覆盖三星的商标与 One UI 视觉设计。二次分发时请自行去掉
+  "Samsung / Samsung Music" 名称与应用图标，不要以官方产品名义传播。
+- 包名 `com.spotify.music` 同样不在授权范围内：它会与正版 Spotify 冲突，二次分发请修改
+  `applicationId`（见上文「关于包名」）。
+- 作者的个人请求（不是法律条款）：这是业余时间做的播放器，请别拿它打包卖钱。
+- 因使用本软件造成的数据丢失、设备异常或流量费用，作者不承担责任（Apache-2.0 的"按原样提供"条款亦已免责）。
 - 你播放的音乐文件版权归各自权利人所有，请自行确保使用权。
 
 ---
