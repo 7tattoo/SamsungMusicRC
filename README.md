@@ -4,7 +4,7 @@
 > 你的 FLAC / WAV / DSD 转码文件就该跑在一条干净的输出链路上。
 >
 > Compose + Media3 + Room，外加一层 **Oboe 原生输出**（AAudio / USB DAC 独占）与**软件 EQ**；
-> 并且完整适配了 **vivo 车机 / JoviInCar 原子随身听**的歌词投屏。
+> 并且完整适配了 **vivo 车机 / JoviInCar 原子随身听**的歌词投屏，以及 OriginOS **原子通知歌词**。
 
 - 最低系统：Android 8.0（API 26）｜目标：Android 15（API 35）｜ABI：arm64-v8a
 - 语言：简体中文 / English 跟随系统
@@ -237,7 +237,9 @@ apksigner sign --ks your.jks --ks-key-alias youralias \
 ```
 
 CI：`.github/workflows/build.yml` 每次 push 构建 Release APK 并上传为构建产物；配了签名 Secrets
-时产物直接是 7tattoo 签名包，没配则为 `app-release-unsigned.apk`。
+时产物直接是 7tattoo 签名包，没配则为 `app-release-unsigned.apk`。**本仓库两个 workflow 的 Secrets
+已配置**，所以 CI 产物就是 7tattoo 签名包（v2/v3 方案；`minSdk 26` 不需要 v1，因此包内没有
+`META-INF/*.SF`，这不是漏签）。
 
 ### 换包名出多个包（vivo 白名单）
 
@@ -288,18 +290,18 @@ Release `multi-1.0.0-rc1` 就是这么打出来的。
 
 - `com.tencent.wecarflow` — 腾讯爱趣听
 - `com.tencent.ibg.joox` — Joox Music
-- `com.spotify.music` — Spotify（**本项目采用**）
-- `com.apple.android.music` — Apple Music
+- `com.spotify.music` — Spotify / 声破天（**本项目采用**；另支持**原子通知歌词**）
+- `com.apple.android.music` — Apple Music（另支持**原子通知歌词**）
 - `com.luna.music.car` — 汽水音乐车机版
-- `com.kugou.android.auto` — 酷狗汽车版
-- `cn.kuwo.kwmusiccar` — 酷我车载版
+- `com.kugou.android.auto` — 酷狗音乐车载版
+- `cn.kuwo.kwmusiccar` — 酷我音乐车机版
 - `com.qidian.QDReader` — 起点读书
 - `com.tencent.weread` — 微信读书
-- `cn.aqzscn.stream_music` — 朗读器
+- `cn.aqzscn.stream_music` — 音流
 
 两点值得留意：
 
-- 名单里有**起点读书、微信读书、朗读器**三个非音乐应用 —— 说明 vivo 判定的不是"是不是音乐 App"，
+- 名单里有**起点读书、微信读书、音流**三个非音乐应用 —— 说明 vivo 判定的不是"是不是音乐 App"，
   而是"是不是需要长文本随播放进度滚动"的内容型应用，歌词滚动复用的正是这条通道。
 - 想换包名与其他音乐 App 共存：改 `app/build.gradle` 的 `applicationId` 即可，
   `namespace` 保持不变，代码、资源与 JNI 绑定都不用动（`FileProvider` 与 startup 的 authority 会自动跟随）。
@@ -315,6 +317,28 @@ Release `multi-1.0.0-rc1` 就是这么打出来的。
 
 > 注：此条来自用户实机观察与包名白名单推断，**尚未做过 A/B 验证**（例如把包名换成
 > `com.luna.music.car` 对比原子随身听是否消失）。有实测结论的同学欢迎开 Issue 补充。
+
+### 原子通知歌词（仅 `com.spotify.music` / `com.apple.android.music`）
+
+上表 10 个包名都能拿到 **JoviInCar 桌面滚动歌词**，但实测只有 **Spotify 与 Apple Music** 两个
+还额外支持 OriginOS 的**原子通知歌词**——播放时在原子通知里逐行滚动当前歌词，手机桌面/锁屏的
+通知卡片同样跟随，无需连接车机即可看到歌词。
+
+本项目取的正是 `com.spotify.music`，所以**两条通道都命中**：连着车机投 JoviInCar 桌面歌词，
+不连车机时手机上的原子通知也照常滚歌词。
+
+> 原子通知歌词**不需要额外写代码**：它是系统按包名给的能力，App 只要正常发媒体通知
+> （`MediaBrowserService` + 播放元数据），系统就把歌词渲染进原子通知。本项目没为它加任何私有通道，
+> 机制层面尚未拆解，这里是实机观察结论。
+
+实测小结（vivo 手机 + 车机投屏）：
+
+- **JoviInCar 桌面滚动歌词**：上表全部 10 个包名都生效，需要连接车机。
+- **原子通知歌词**：仅 `com.spotify.music`、`com.apple.android.music` 生效，**不需要**连车机。
+- **不套用车载音乐皮肤**：上表 10 个包名都不被套皮肤。
+
+这也是为什么不建议随意换包名：换成 `cn.kuwo.kwmusiccar`（酷我音乐车机版）之类仍能滚桌面歌词，
+但**原子通知歌词会一起消失**。
 
 
 ## 来源与感谢
