@@ -252,15 +252,31 @@ CI：`.github/workflows/build.yml` 每次 push 构建 Release APK 并上传为�
 gradle :app:assembleRelease -PoverrideAppId=cn.kuwo.kwmusiccar   # 或环境变量 OVERRIDE_APP_ID
 ```
 
-仓库另有一个 `.github/workflows/build-multi.yml`（**Build 10-in-1 APKs**）：在 Actions 里手动运行，
-10 个 job 并行，一次产出上面那张白名单表里全部 10 个包名的已签名 APK，代码完全相同、只有包名不同。
-Release `multi-1.0.0-rc1` 就是这么打出来的。
+本地一条命令出齐这 10 个包（产物名就是 `<包名>.apk`，脚本不含任何口令）：
+
+```bash
+bash scripts/build10.sh                        # 全部 10 个 → dist/
+PKGS="com.spotify.music" bash scripts/build10.sh   # 只构建其中几个
+```
+
+`.github/workflows/build-multi.yml`（**Build 10-in-1 APKs**）做同一件事：在 Actions 里手动运行，
+10 个 job 并行，产出全部 10 个包名的已签名 APK，代码完全相同、只有包名不同，每次运行打包上传为一个
+release 资产 `SamsungMusicRC-<tag>-10in1.zip`（可选 `make_release` 顺带建/更新 Draft Release 并挂上）。
+zip 里的文件名是工作流固定的 `com.<…>.apk` 格式（和 Release 附件命名一致），**不带版本号**——
+版本写在 tag 和 APK 内部（`versionName` / `versionCode`），跟正文一致。
+**已上线的 Release v1.0.0 的 10 个包是本地构建后上传的**（当时还没有这两个脚本/工作流），
+下一条版本可以直接用它们出包。
 
 ## 下载
 
-- **单一包名（默认 `com.spotify.music`）**：<https://github.com/7tattoo/SamsungMusicRC/releases>
-- **vivo 10 合 1**（10 个白名单包名各一个包，同一 commit）：
-  <https://github.com/7tattoo/SamsungMusicRC/releases/tag/multi-1.0.0-rc1>
+**Release 页**：<https://github.com/7tattoo/SamsungMusicRC/releases/tag/v1.0.0>
+
+附件直接按**包名**命名（`com.spotify.music.apk`、`com.apple.android.music.apk`……共 10 个）——
+10 个包代码完全相同，只有包名不同，看文件名就知道它是哪个包名，想要哪个装哪个。
+版本号不在文件名里（10 个包都来自同一 commit，版本写在 tag 和 APK 内部：
+`versionName 1.0.0` / `versionCode 1`）。装进系统后显示的应用名统一是 `Samsung Music`。
+
+Release 正文里有一张「文件名 → 包名 → 对应的正版应用」对照表，以及包名冲突、签名不一致的排查说明。
 
 手机与车机都只装了 arm64-v8a，直接装对应包名的那个即可；同包名的包之间不能共存（会互相覆盖），
 与正版同名 App 也**不能共存**——要先卸载原版才能装。

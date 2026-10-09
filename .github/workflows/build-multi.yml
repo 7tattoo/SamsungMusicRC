@@ -2,7 +2,7 @@ name: Build 10-in-1 APKs
 
 # vivo 智能车载投屏只给白名单包名出桌面滚动歌词，所以一次出 10 个 applicationId 的包。
 # 10 个 job 并行，每个 job 用 -PoverrideAppId 换包名，其余代码完全相同。
-# 产物：SamsungMusicRC_<version>_<包名(点→连字符)>_<昵称>.apk（7tattoo 签名，v1/v2/v3）
+# 产物：<包名>.apk（7tattoo 签名，v1/v2/v3），与 GitHub Release 资产同名
 
 on:
   workflow_dispatch:
@@ -11,10 +11,6 @@ on:
         description: '要构建的分支或标签'
         required: true
         default: 'main'
-      version:
-        description: '文件名里的版本号'
-        required: true
-        default: '1.0.0-rc1'
 
 jobs:
   build:
@@ -89,14 +85,13 @@ jobs:
           "$AAPT2" dump badging "$APK" | head -3
 
       - name: Collect artifact
-        env:
-          VERSION: ${{ inputs.version }}
         run: |
           set -e
           mkdir -p out
+          # 文件名 = 包名。10 个包代码完全相同，只有包名不同；版本信息在 APK 内
+          # （versionName/versionCode）和 Release tag 上，不塞进文件名。
           APK=$(ls app/build/outputs/apk/release/*.apk | head -1)
-          SLUG=$(echo "${{ matrix.id }}" | tr '.' '-')
-          cp "$APK" "out/SamsungMusicRC_${VERSION}_${SLUG}_${{ matrix.label }}.apk"
+          cp "$APK" "out/${{ matrix.id }}.apk"
           ls -l out
 
       - name: Upload APK
