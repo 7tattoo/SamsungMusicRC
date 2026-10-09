@@ -194,6 +194,13 @@ vivomusicmix.extra.lrc_change        歌词变更事件（setSessionExtras）
 > 以上适配默认开启，可在「设置 → 播放与音效 → 车载投屏歌词」关闭。
 > 关闭后不再向车机推送歌词，其余播控不受影响。
 
+### 6. 最后一关：包名
+
+上面五件事全做对，桌面滚动歌词仍然可能不出——因为 vivo 侧还有一层**包名白名单**：
+只有被列为"内容型播放应用"的包名才会获得 JoviInCar 桌面逐行歌词能力。
+实测可用名单、以及本项目为何占用 `com.spotify.music`，见文末
+[关于包名（以及一份实测白名单）](#关于包名以及一份实测白名单)。
+
 ---
 
 ## 构建
@@ -207,15 +214,27 @@ gradle :app:assembleRelease --no-daemon --no-configuration-cache
 仓库不含 `gradlew`，请用本地 Gradle 8.9（CI 同版本）。原生库 `liboboe_sink.so` 由
 `app/src/main/cpp` 经 CMake 随构建自动编译，无需手工准备。
 
-签名：
+签名凭据**不入库**（仓库里没有任何口令字面量）。`app/build.gradle` 按以下顺序取值：
+`local.properties` → 环境变量 → 都没有则产出 `app-release-unsigned.apk`。
+
+```properties
+# local.properties（已在 .gitignore 中）
+key.store.file=7tattoo.jks        # 相对 app/ 的路径，或绝对路径
+key.alias=你的别名
+key.store.password=你的库口令
+key.alias.password=你的键口令
+```
+
+同名环境变量（CI 用 Secrets 注入，无 `local.properties` 时生效）：
+`KEYSTORE_FILE` / `KEY_ALIAS` / `KEYSTORE_PASSWORD` / `KEY_PASSWORD`。
+
+自行签名：
 
 ```bash
 zipalign -p -f 4 in.apk aligned.apk
-apksigner sign --ks your.jks --ks-key-alias youralias aligned.apk
+apksigner sign --ks your.jks --ks-key-alias youralias \
+  --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true aligned.apk
 ```
-
-> 提示：AGP 直接产出的包若再经 `sign-apk` 之类的二次封装脚本处理，个别版本会破坏 v3 签名块，
-> 建议 zipalign + apksigner 直签。
 
 CI：`.github/workflows/build.yml` 每次 push 构建 Release APK 并上传为构建产物。
 
@@ -238,12 +257,45 @@ Releases 页提供已签名的 APK：
 纯 Kotlin + 一层 C++，无 Retrofit/无埋点/无广告；清单里**没有 `INTERNET` 权限**，
 抓包可以看到它一个字节都不往外发。
 
-## 关于包名
+## 关于包名（以及一份实测白名单）
 
-包名为 `com.spotify.music`：vivo 车机与部分系统音乐入口按**已知音乐包名白名单**识别投屏对象，
-落在白名单内才能稳定唤起原子随身听卡片。若你希望与其他音乐 App 共存，
-可修改 `app/build.gradle` 里的 `applicationId`（`namespace` 保持不变即可，代码、资源与 JNI 绑定都不用动，
-`FileProvider` 与 startup 的 authority 会自动跟随），但改完后车机侧识别需要重新验证。
+包名为 `com.spotify.music`。原因不体面但很实际：**vivo 的车机 / 桌面歌词能力按包名白名单下发**，
+不在名单里的应用，代码写得再对也拿不到桌面滚动歌词。沿用名单内的包名是目前唯一可行的路子
+（与官方 Spotify / Samsung Music 均无关系，本 App 完全本地播放、不联网）。
+
+### 实测：支持 JoviInCar 桌面滚动歌词（且不套用车载音乐皮肤）的包名
+
+以下包名在实机上验证过：投屏到车机后能在 JoviInCar 桌面看到**逐行滚动歌词**，
+同时系统**不会**给它套"车载音乐皮肤"（即界面仍按应用自己的布局渲染，不会被强制替换成车机版式）。
+
+- `com.tencent.wecarflow` — 腾讯爱趣听
+- `com.tencent.ibg.joox` — Joox Music
+- `com.spotify.music` — Spotify（**本项目采用**）
+- `com.apple.android.music` — Apple Music
+- `com.luna.music.car` — 汽水音乐车机版
+- `com.kugou.android.auto` — 酷狗汽车版
+- `cn.kuwo.kwmusiccar` — 酷我车载版
+- `com.qidian.QDReader` — 起点读书
+- `com.tencent.weread` — 微信读书
+- `cn.aqzscn.stream_music` — 朗读器
+
+两点值得留意：
+
+- 名单里有**起点读书、微信读书、朗读器**三个非音乐应用 —— 说明 vivo 判定的不是"是不是音乐 App"，
+  而是"是不是需要长文本随播放进度滚动"的内容型应用，歌词滚动复用的正是这条通道。
+- 想换包名与其他音乐 App 共存：改 `app/build.gradle` 的 `applicationId` 即可，
+  `namespace` 保持不变，代码、资源与 JNI 绑定都不用动（`FileProvider` 与 startup 的 authority 会自动跟随）。
+  但**改完大概率失去桌面歌词**——除非换成上表里的另一个包名。
+
+### 原子随身听（`com.spotify.music` / `com.apple.android.music`）
+
+上表里 Spotify 与 Apple Music 两个包名，除桌面滚动歌词外，还被收录进 **vivo 原子随身听**
+（系统级音乐聚合入口：桌面/锁屏/车机上的原子组件可直接接管播放）。本项目占用 `com.spotify.music`，
+因此同样出现在原子随身听里 —— 这也是本项目能在车机上被"原子随身听"唤起的原因。
+
+> 注：此条来自用户实机观察与包名白名单推断，**尚未做过 A/B 验证**（例如把包名换成
+> `com.luna.music.car` 对比原子随身听是否消失）。有实测结论的同学欢迎开 Issue 补充。
+
 
 ## 来源与感谢
 

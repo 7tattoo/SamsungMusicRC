@@ -5,12 +5,25 @@ plugins {
     id 'com.google.devtools.ksp'
 }
 
-def keystoreProperties = [
-    storeFile: file("7tattoo.jks"),
-    storePassword: "52001314",
-    keyAlias: "7tattoo",
-    keyPassword: "520v1314"
-]
+// ── 签名凭据不入库 ──────────────────────────────────────────────────────────
+// 读取顺序：local.properties（已在 .gitignore）→ 环境变量（CI 用 secrets 注入）→ 跳过签名。
+//   local.properties: key.store.file / key.store.password / key.alias / key.alias.password
+//   环境变量:         KEYSTORE_FILE / KEYSTORE_PASSWORD / KEY_ALIAS / KEY_PASSWORD
+// 未提供凭据时 release 不签名，产出 app-release-unsigned.apk（便于第三方自行构建）。
+def localProps = new Properties()
+def localPropsFile = rootProject.file('local.properties')
+if (localPropsFile.exists()) {
+    localPropsFile.withInputStream { localProps.load(it) }
+}
+def signingSecret = { String propKey, String envKey, String fallback = null ->
+    localProps.getProperty(propKey) ?: System.getenv(envKey) ?: fallback
+}
+
+def ksFile = file(signingSecret('key.store.file', 'KEYSTORE_FILE', '7tattoo.jks'))
+def ksAlias = signingSecret('key.alias', 'KEY_ALIAS', '7tattoo')
+def ksStorePass = signingSecret('key.store.password', 'KEYSTORE_PASSWORD')
+def ksKeyPass = signingSecret('key.alias.password', 'KEY_PASSWORD')
+def releaseSigningReady = ksFile.exists() && ksStorePass != null && ksKeyPass != null
 
 android {
     namespace 'com.spotify.music'
@@ -42,11 +55,13 @@ android {
     }
 
     signingConfigs {
-        release {
-            storeFile keystoreProperties.storeFile
-            storePassword keystoreProperties.storePassword
-            keyAlias keystoreProperties.keyAlias
-            keyPassword keystoreProperties.keyPassword
+        if (releaseSigningReady) {
+            release {
+                storeFile ksFile
+                storePassword ksStorePass
+                keyAlias ksAlias
+                keyPassword ksKeyPass
+            }
         }
     }
 
@@ -54,11 +69,18 @@ android {
         release {
             minifyEnabled false
             shrinkResources false
-            signingConfig signingConfigs.release
+            // 无凭据时不签名（产物为 *-unsigned.apk），避免他人 clone 后构建直接失败
+            if (releaseSigningReady) {
+                signingConfig signingConfigs.release
+            }
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
         debug {
-            signingConfig signingConfigs.release
+            // debug 复用同一把钥匙，方便与 Release 包互相覆盖安装；
+            // 无凭据时退回 AGP 默认 debug.keystore，不让他人 clone 后连 debug 都跑不起来
+            if (releaseSigningReady) {
+                signingConfig signingConfigs.release
+            }
         }
     }
 

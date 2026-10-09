@@ -28,18 +28,38 @@ jobs:
         with:
           gradle-version: '8.9'
 
+      # 凭据全部来自仓库 Secrets，工作流文件里不出现任何口令字面量。
+      # 需要配置：SIGNING_JKS_BASE64（keystore 的 base64）、
+      #           SIGNING_KEYSTORE_PASSWORD、SIGNING_KEY_PASSWORD、SIGNING_KEY_ALIAS（可选，默认 7tattoo）
       - name: Restore signing key
         env:
           SIGNING_JKS: ${{ secrets.SIGNING_JKS_BASE64 }}
+          SIGNING_STORE_PASSWORD: ${{ secrets.SIGNING_KEYSTORE_PASSWORD }}
         run: |
-          echo "$SIGNING_JKS" | base64 -d > app/7tattoo.jks
-          test -s app/7tattoo.jks
+          if [ -z "$SIGNING_JKS" ] || [ -z "$SIGNING_STORE_PASSWORD" ]; then
+            echo "未配置签名 Secrets，本次产出未签名 APK（app-release-unsigned.apk）"
+            echo "has_signing=false" >> "$GITHUB_ENV"
+          else
+            echo "$SIGNING_JKS" | base64 -d > app/7tattoo.jks
+            test -s app/7tattoo.jks
+            echo "has_signing=true" >> "$GITHUB_ENV"
+          fi
 
       - name: Build release APK
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.SIGNING_KEYSTORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
         run: gradle assembleRelease --no-daemon --stacktrace
+
+      - name: Collect artifact
+        run: |
+          mkdir -p out
+          cp app/build/outputs/apk/release/*.apk out/
+          ls -l out
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: SamsungMusic-release-apk
-          path: app/build/outputs/apk/release/app-release.apk
+          path: out/*.apk
