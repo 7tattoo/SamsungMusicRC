@@ -1,0 +1,106 @@
+name: Build 10-in-1 APKs
+
+# vivo 智能车载投屏只给白名单包名出桌面滚动歌词，所以一次出 10 个 applicationId 的包。
+# 10 个 job 并行，每个 job 用 -PoverrideAppId 换包名，其余代码完全相同。
+# 产物：SamsungMusicRC_<version>_<包名(点→连字符)>_<昵称>.apk（7tattoo 签名，v1/v2/v3）
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: '要构建的分支或标签'
+        required: true
+        default: 'main'
+      version:
+        description: '文件名里的版本号'
+        required: true
+        default: '1.0.0-rc1'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { id: com.tencent.wecarflow,   label: Tx }
+          - { id: com.tencent.ibg.joox,    label: Joox }
+          - { id: com.spotify.music,       label: Spotify }
+          - { id: com.apple.android.music, label: AppleMusic }
+          - { id: com.luna.music.car,      label: Qishui }
+          - { id: com.kugou.android.auto,  label: Kugou }
+          - { id: cn.kuwo.kwmusiccar,      label: Kuwo }
+          - { id: com.qidian.QDReader,     label: QDReader }
+          - { id: com.tencent.weread,      label: WeRead }
+          - { id: cn.aqzscn.stream_music,  label: YinLiu }
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Android SDK licenses + NDK/CMake
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;27.2.12479018" "cmake;3.22.1" > /dev/null
+
+      - name: Set up Gradle 8.9
+        uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: '8.9'
+
+      # 凭据全部来自仓库 Secrets，工作流文件里不出现任何口令字面量。
+      - name: Restore signing key
+        env:
+          SIGNING_JKS: ${{ secrets.SIGNING_JKS_BASE64 }}
+          SIGNING_STORE_PASSWORD: ${{ secrets.SIGNING_KEYSTORE_PASSWORD }}
+        run: |
+          if [ -z "$SIGNING_JKS" ] || [ -z "$SIGNING_STORE_PASSWORD" ]; then
+            echo "未配置签名 Secrets，本次产出的 APK 不会签名" >&2
+            exit 1
+          fi
+          echo "$SIGNING_JKS" | base64 -d > app/7tattoo.jks
+          test -s app/7tattoo.jks
+
+      - name: Build release APK (${{ matrix.id }})
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.SIGNING_KEYSTORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
+          OVERRIDE_APP_ID: ${{ matrix.id }}
+        run: gradle assembleRelease --no-daemon --stacktrace -PoverrideAppId=${{ matrix.id }}
+
+      # 自检：包里真正的 applicationId 必须是本次矩阵指定的那个
+      - name: Verify package name
+        run: |
+          set -e
+          APK=$(ls app/build/outputs/apk/release/*.apk | head -1)
+          AAPT2=$(ls -d "$ANDROID_HOME"/build-tools/*/aapt2 | tail -1)
+          PKG=$("$AAPT2" dump badging "$APK" | sed -n "s/^package: name='\([^']*\)'.*/\1/p")
+          echo "期望 ${{ matrix.id }} / 实际 $PKG"
+          test "$PKG" = "${{ matrix.id }}"
+          "$AAPT2" dump badging "$APK" | head -3
+
+      - name: Collect artifact
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -e
+          mkdir -p out
+          APK=$(ls app/build/outputs/apk/release/*.apk | head -1)
+          SLUG=$(echo "${{ matrix.id }}" | tr '.' '-')
+          cp "$APK" "out/SamsungMusicRC_${VERSION}_${SLUG}_${{ matrix.label }}.apk"
+          ls -l out
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: apk-${{ matrix.id }}
+          path: out/*.apk

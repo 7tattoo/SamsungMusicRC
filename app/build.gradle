@@ -25,12 +25,21 @@ def ksStorePass = signingSecret('key.store.password', 'KEYSTORE_PASSWORD')
 def ksKeyPass = signingSecret('key.alias.password', 'KEY_PASSWORD')
 def releaseSigningReady = ksFile.exists() && ksStorePass != null && ksKeyPass != null
 
+// ── 多包名合一构建 ──────────────────────────────────────────────────────────
+// vivo 智能车载投屏只给白名单包名出桌面滚动歌词，所以同一份代码要出多个 applicationId 的包。
+// 用法：gradle assembleRelease -PoverrideAppId=com.apple.android.music
+//       （或环境变量 OVERRIDE_APP_ID）
+// namespace 固定 com.spotify.music，代码包路径与 R 类不受影响；
+// FileProvider authority 用 ${applicationId}，会自动跟着换。
+def overrideAppId = (providers.gradleProperty('overrideAppId').getOrNull()
+        ?: System.getenv('OVERRIDE_APP_ID'))?.toString()?.trim()
+
 android {
     namespace 'com.spotify.music'
     compileSdk 36
 
     defaultConfig {
-        applicationId "com.spotify.music"
+        applicationId overrideAppId ?: "com.spotify.music"
         minSdk 26
         targetSdk 35
         versionCode 1

@@ -211,8 +211,8 @@ gradle :app:assembleRelease --no-daemon --no-configuration-cache
 # 产物：app/build/outputs/apk/release/app-release-unsigned.apk
 ```
 
-仓库不含 `gradlew`，请用本地 Gradle 8.9（CI 同版本）。原生库 `liboboe_sink.so` 由
-`app/src/main/cpp` 经 CMake 随构建自动编译，无需手工准备。
+仓库不含 `gradlew`，请用本地 Gradle 8.9（CI 同版本）。原生库 `libsamsung_oboe.so`（连同依赖的
+`liboboe.so`）由 `app/src/main/cpp` 经 CMake 随构建自动编译，无需手工准备。
 
 签名凭据**不入库**（仓库里没有任何口令字面量）。`app/build.gradle` 按以下顺序取值：
 `local.properties` → 环境变量 → 都没有则产出 `app-release-unsigned.apk`。
@@ -236,12 +236,30 @@ apksigner sign --ks your.jks --ks-key-alias youralias \
   --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true aligned.apk
 ```
 
-CI：`.github/workflows/build.yml` 每次 push 构建 Release APK 并上传为构建产物。
+CI：`.github/workflows/build.yml` 每次 push 构建 Release APK 并上传为构建产物；配了签名 Secrets
+时产物直接是 7tattoo 签名包，没配则为 `app-release-unsigned.apk`。
+
+### 换包名出多个包（vivo 白名单）
+
+`applicationId` 可由构建参数覆盖，`namespace`（代码包路径、R 类）不受影响，
+`FileProvider` 的 authority 用 `${applicationId}` 会自动跟着换：
+
+```bash
+gradle :app:assembleRelease -PoverrideAppId=cn.kuwo.kwmusiccar   # 或环境变量 OVERRIDE_APP_ID
+```
+
+仓库另有一个 `.github/workflows/build-multi.yml`（**Build 10-in-1 APKs**）：在 Actions 里手动运行，
+10 个 job 并行，一次产出上面那张白名单表里全部 10 个包名的已签名 APK，代码完全相同、只有包名不同。
+Release `multi-1.0.0-rc1` 就是这么打出来的。
 
 ## 下载
 
-Releases 页提供已签名的 APK：
-<https://github.com/7tattoo/SamsungMusicRC/releases>
+- **单一包名（默认 `com.spotify.music`）**：<https://github.com/7tattoo/SamsungMusicRC/releases>
+- **vivo 10 合 1**（10 个白名单包名各一个包，同一 commit）：
+  <https://github.com/7tattoo/SamsungMusicRC/releases/tag/multi-1.0.0-rc1>
+
+手机与车机都只装了 arm64-v8a，直接装对应包名的那个即可；同包名的包之间不能共存（会互相覆盖），
+与正版同名 App 也**不能共存**——要先卸载原版才能装。
 
 ## 技术栈
 
@@ -285,7 +303,9 @@ Releases 页提供已签名的 APK：
   而是"是不是需要长文本随播放进度滚动"的内容型应用，歌词滚动复用的正是这条通道。
 - 想换包名与其他音乐 App 共存：改 `app/build.gradle` 的 `applicationId` 即可，
   `namespace` 保持不变，代码、资源与 JNI 绑定都不用动（`FileProvider` 与 startup 的 authority 会自动跟随）。
-  但**改完大概率失去桌面歌词**——除非换成上表里的另一个包名。
+  也可以不改文件，直接用构建参数出包：`gradle :app:assembleRelease -PoverrideAppId=<上表任一包名>`；
+  Actions 里的 **Build 10-in-1 APKs** 就是把上表 10 个包名一次全出（见「下载」）。
+  但**换成名单外的包名大概率失去桌面歌词**——除非换成上表里的另一个包名。
 
 ### 原子随身听（`com.spotify.music` / `com.apple.android.music`）
 
