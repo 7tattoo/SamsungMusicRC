@@ -1,0 +1,52 @@
+Samsung Music (RC)
+Copyright 2026 鬼蓝 (7tattoo)
+
+This product includes software developed by the following third parties.
+Their notices are reproduced here as required by Section 4 of the Apache License 2.0.
+
+================================================================================
+Oboe — https://github.com/google/oboe
+Copyright The Android Open Source Project
+Licensed under the Apache License, Version 2.0.
+Used as a binary dependency (com.google.oboe:oboe:1.9.0); the native output sink
+in app/src/main/cpp/oboe_sink.cpp is written against its C++ API.
+
+================================================================================
+Android Jetpack / AndroidX Media3, ExoPlayer, Room, Compose, Lifecycle, Core
+Copyright The Android Open Source Project
+Licensed under the Apache License, Version 2.0.
+https://developer.android.com/jetpack
+
+================================================================================
+Kotlin Standard Library and the Kotlin/Compose Gradle plugins
+Copyright 2010-2024 JetBrains s.r.o. and the Kotlin project contributors
+Licensed under the Apache License, Version 2.0.
+
+================================================================================
+Halcyon / RawS Music — https://github.com/Kifranei/Halcyon
+Copyright Kifranei
+Licensed under the Apache License, Version 2.0.
+The architecture of the native Oboe output backend and of the software EQ
+(10-band RBJ biquad pipeline with pre-gain, shelf filters and soft limiter) was
+studied from this project. app/src/main/cpp/oboe_sink.cpp and the equalizer code
+in this repository are independent implementations, not source copies; no file
+from Halcyon is distributed here.
+
+================================================================================
+ICU (java.text.Collator behaviour on Android)
+Android's java.text.Collator is part of the Android Open Source Project
+(Apache-2.0) and derives from IBM ICU. No ICU artifact is packaged by this app.
+
+================================================================================
+Notices that are NOT licenses
+
+"Samsung" and "Samsung Music" are trademarks of Samsung Electronics Co., Ltd.
+The user interface of this project is an independent implementation inspired by
+Samsung Music's look; no Samsung asset, resource, icon, string or code is used,
+and the Apache-2.0 license granted for this repository's source code does not
+extend to any Samsung trademark or design.
+
+The applicationId "com.spotify.music" is used only so that car-head-unit and
+system media entry points, which recognise players by a known music package
+whitelist, can launch this app. It is not a claim of affiliation with Spotify AB.
+Downstream distributions are asked to change it (see README, "关于包名").
