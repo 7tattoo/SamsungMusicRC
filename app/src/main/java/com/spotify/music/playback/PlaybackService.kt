@@ -505,6 +505,9 @@ class PlaybackService : MediaLibraryService() {
                 "onMediaItemTransition id=${mediaItem?.mediaId} reason=${transitionReasonName(reason)} " +
                     "playWhenReady=${player.playWhenReady}"
             )
+            // crossfade 只在上一首尾部把 player.volume 压到 ~0，AUTO 切歌不会触发
+            // onIsPlayingChanged，volume 会永久卡在 0（新歌静音播放）。切歌瞬间必须拉回。
+            player.volume = 1f
             handleTrackChanged()
             saveLastQueue()
         }
@@ -661,9 +664,15 @@ class PlaybackService : MediaLibraryService() {
                 while (isActive && player.isPlaying) {
                     val duration = player.duration
                     val pos = player.currentPosition
-                    if (duration != C.TIME_UNSET && duration > fadeMs && duration - pos <= fadeMs) {
+                    if (duration != C.TIME_UNSET && duration > fadeMs) {
                         val remain = duration - pos
-                        player.volume = (remain.toFloat() / fadeMs).coerceIn(0f, 1f)
+                        if (remain <= fadeMs) {
+                            player.volume = (remain.toFloat() / fadeMs).coerceIn(0f, 1f)
+                        } else if (player.volume < 1f) {
+                            // fade 窗口外兜底：同曲 seek 回中段 / transition 后的漏网 0 音量，
+                            // 200ms 内自愈拉回满音量
+                            player.volume = 1f
+                        }
                     }
                     delay(200)
                 }
@@ -762,6 +771,13 @@ class PlaybackService : MediaLibraryService() {
                             player.playWhenReady = false
                             player.pause()
                         } else {
+                            // 冷启动 restoreQueue 协程可能还没跑完，play() 在 STATE_IDLE
+                            // 是空操作（Media3 要求 prepare() 建立管线后才能 play）。
+                            // 显式 prepare：如有队列，无需额外操作；队列为空也无害。
+                            if (player.playbackState == Player.STATE_IDLE) {
+                                CrashLogger.trace("toggle preparing from IDLE")
+                                player.prepare()
+                            }
                             player.playWhenReady = true
                             player.play()
                         }
