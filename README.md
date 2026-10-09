@@ -147,8 +147,16 @@
 
 | 通道 | 载体 | 语义 |
 | :--- | :--- | :--- |
-| `ucar`（车机媒体框架） | `setExtras` 的 `ucar.media.metadata.LYRICS_WHOLE` + `LYRICS_STATUS` | 一次给**整段 LRC**，由车机自己按进度滚动 |
-| `vivomusicmix`（原子随身听） | `setSessionExtras` 的 `lrc_change` 事件 | 逐行推送当前歌词行 |
+| `ucar`（车机媒体框架） | `MediaMetadata.extras` | 一次给**整段 LRC**，车机按进度自己滚动 |
+| `vivomusicmix`（原子随身听） | `setSessionExtras()` 事件 | 逐行推送当前歌词行 |
+
+对应字段名：
+
+```text
+ucar.media.metadata.LYRICS_WHOLE     整段 LRC
+ucar.media.metadata.LYRICS_STATUS    固定 0（有歌词）
+vivomusicmix.extra.lrc_change        歌词变更事件
+```
 
 踩过的坑，都写进了注释：
 
@@ -238,12 +246,10 @@ Releases 页提供已签名的 APK：
 
 ## 来源与感谢
 
-| | 来源 | 链接 |
-| :--- | :--- | :--- |
-| 生产力 | **Minis** | <https://github.com/OpenMinis> |
-| UI | **Samsung** | <https://www.samsung.com.cn/> |
-| 音效 | **Halcyon** | <https://github.com/Kifranei/Halcyon> |
-| 作者 | **鬼蓝** | <https://b23.tv/jqYmSVw> |
+- 生产力 · **Minis** — https://github.com/OpenMinis
+- UI · **Samsung** — https://www.samsung.com.cn/
+- 音效 · **Halcyon** — https://github.com/Kifranei/Halcyon
+- 作者 · **鬼蓝** — https://b23.tv/jqYmSVw
 
 - **Minis**：全部代码编写、调试与打包在 Minis 中完成。
 - **Samsung**：界面与交互（标签栏、迷你播放条 ↔ 黑胶唱片形变、均衡器版式）参考 Samsung Music。
