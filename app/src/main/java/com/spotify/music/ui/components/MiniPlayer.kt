@@ -1,10 +1,14 @@
+@file:OptIn(ExperimentalFoundationApi::class)
+
 package com.spotify.music.ui.components
 
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -12,7 +16,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -42,6 +45,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp as lerpColor
@@ -183,24 +187,30 @@ fun MiniPlayer(
                             .clickable { onOpenQueue() },
                     )
                 }
-                Spacer(Modifier.weight(1f))
+                // 右侧信息区：weight(1f) 限定宽度，封面固定 44dp 不被长标题挤压。
+                // 标题右对齐；超出可用宽度时用 basicMarquee 缓慢循环滚动。
                 Row(
                     Modifier
+                        .weight(1f)
                         .clickable { onOpenPlayer() }
                         .padding(end = 10.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Column(
-                        modifier = Modifier.padding(end = 10.dp),
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(end = 10.dp),
                         horizontalAlignment = Alignment.End,
                     ) {
                         Text(
                             title,
+                            modifier = Modifier
+                                .clipToBounds()
+                                .basicMarquee(iterations = Int.MAX_VALUE, initialDelayMillis = 1200),
                             color = Color.White,
                             fontSize = 14.sp,
                             fontWeight = FontWeight.SemiBold,
                             maxLines = 1,
-                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                             textAlign = TextAlign.End,
                         )
                         Text(
