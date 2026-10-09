@@ -77,22 +77,34 @@
 
 ### 手机端
 
-| 曲库列表 | 迷你播放条 | 全屏播放页 | 均衡器 |
-| :---: | :---: | :---: | :---: |
-| ![曲库列表](docs/screenshots/phone-01-library.jpg) | ![迷你播放条](docs/screenshots/phone-02-miniplayer.jpg) | ![全屏播放页](docs/screenshots/phone-03-player.jpg) | ![均衡器](docs/screenshots/phone-04-equalizer.jpg) |
+<table>
+<tr>
+<td align="center"><img src="docs/screenshots/phone-01-library.jpg" width="210"><br>曲库列表</td>
+<td align="center"><img src="docs/screenshots/phone-02-miniplayer.jpg" width="210"><br>迷你播放条</td>
+<td align="center"><img src="docs/screenshots/phone-03-player.jpg" width="210"><br>全屏播放页</td>
+<td align="center"><img src="docs/screenshots/phone-04-equalizer.jpg" width="210"><br>均衡器</td>
+</tr>
+</table>
 
 左侧 A–Z 索引、顶部标签栏可自定义显隐；底部圆形封面即迷你播放条，点按展开为整页播放器。
 均衡器页为 10 段 + 前置增益 + 低音/高音/环绕增强，下方为预设列表。
 
 ### 车载投屏（vivo 车机 / JoviInCar）
 
-| 车机曲库 | 车机播放页 | 车机歌词页 | 原子随身听卡片 |
-| :---: | :---: | :---: | :---: |
-| ![车机曲库](docs/screenshots/car-01-library.jpg) | ![车机播放页](docs/screenshots/car-02-player.jpg) | ![车机歌词页](docs/screenshots/car-03-lyrics.jpg) | ![原子随身听](docs/screenshots/car-04-vivo-desktop-widget.jpg) |
+<table>
+<tr>
+<td align="center"><img src="docs/screenshots/car-01-library.jpg" width="300"><br>车机曲库</td>
+<td align="center"><img src="docs/screenshots/car-02-player.jpg" width="300"><br>车机播放页</td>
+<td align="center"><img src="docs/screenshots/car-03-lyrics.jpg" width="300"><br>车机歌词页</td>
+<td align="center"><img src="docs/screenshots/car-04-vivo-desktop-widget.jpg" width="300"><br>vivo 桌面原子组件</td>
+</tr>
+</table>
 
-横屏车机自动切换为双栏布局（左信息 / 右歌词），底部保留 Dock 播控条；
-最右为投屏后车机桌面"小V建议 · 原子随身听"卡片，封面、曲名、作词作曲与滚动歌词一并呈现，
-方向盘和车机触屏都能直接控制。
+横屏车机自动切换为双栏布局（左信息 / 右歌词），底部保留 Dock 播控条。
+
+最右那张是 **vivo 手机桌面（OriginOS 系统界面）** 上的"小V建议 · 音乐原子组件"卡片，不是车机界面：
+车机版通过 JoviInCar 协议把播放状态注册到系统，OriginOS 便在手机桌面上渲染这张卡片 —— 封面、曲名、
+作词作曲与滚动歌词一并呈现，进度条跟着实际播放走。
 
 ---
 
