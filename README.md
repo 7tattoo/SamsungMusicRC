@@ -79,10 +79,12 @@
 
 <table>
 <tr>
-<td align="center"><img src="docs/screenshots/phone-01-library.jpg" width="210"><br>曲库列表</td>
-<td align="center"><img src="docs/screenshots/phone-02-miniplayer.jpg" width="210"><br>迷你播放条</td>
-<td align="center"><img src="docs/screenshots/phone-03-player.jpg" width="210"><br>全屏播放页</td>
-<td align="center"><img src="docs/screenshots/phone-04-equalizer.jpg" width="210"><br>均衡器</td>
+<td align="center"><img src="docs/screenshots/phone-01-library.jpg" width="165"><br>曲库列表</td>
+<td align="center"><img src="docs/screenshots/phone-02-miniplayer.jpg" width="165"><br>迷你播放条</td>
+</tr>
+<tr>
+<td align="center"><img src="docs/screenshots/phone-03-player.jpg" width="165"><br>全屏播放页</td>
+<td align="center"><img src="docs/screenshots/phone-04-equalizer.jpg" width="165"><br>均衡器</td>
 </tr>
 </table>
 
@@ -92,12 +94,10 @@
 ### 车载投屏（vivo 车机 / JoviInCar）
 
 <table>
-<tr>
-<td align="center"><img src="docs/screenshots/car-01-library.jpg" width="300"><br>车机曲库</td>
-<td align="center"><img src="docs/screenshots/car-02-player.jpg" width="300"><br>车机播放页</td>
-<td align="center"><img src="docs/screenshots/car-03-lyrics.jpg" width="300"><br>车机歌词页</td>
-<td align="center"><img src="docs/screenshots/car-04-vivo-desktop-widget.jpg" width="300"><br>vivo 桌面原子组件</td>
-</tr>
+<tr><td align="center"><img src="docs/screenshots/car-01-library.jpg" width="330"><br>车机曲库（横屏双栏）</td></tr>
+<tr><td align="center"><img src="docs/screenshots/car-02-player.jpg" width="330"><br>车机播放页</td></tr>
+<tr><td align="center"><img src="docs/screenshots/car-03-lyrics.jpg" width="330"><br>车机歌词页</td></tr>
+<tr><td align="center"><img src="docs/screenshots/car-04-vivo-desktop-widget.jpg" width="330"><br>vivo 桌面原子组件</td></tr>
 </table>
 
 横屏车机自动切换为双栏布局（左信息 / 右歌词），底部保留 Dock 播控条。
