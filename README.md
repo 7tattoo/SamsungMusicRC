@@ -148,10 +148,8 @@
 
 车机型号和系统版本不一，歌词通道有两套，本项目**同时发送**，谁支持谁生效：
 
-| 通道 | 说明 |
-| :--- | :--- |
-| `ucar` | 车机媒体框架。一次给**整段 LRC**，由车机按进度自己滚动 |
-| `vivomusicmix` | 原子随身听。逐行推送当前歌词行 |
+* **`ucar`** —— 车机媒体框架。一次给**整段 LRC**，由车机按进度自己滚动。
+* **`vivomusicmix`** —— 原子随身听。逐行推送当前歌词行。
 
 对应字段名：
 
@@ -283,14 +281,12 @@ Release 正文里有一张「文件名 → 包名 → 对应的正版应用」�
 
 ## 技术栈
 
-| 组件 | 用途 |
-| :--- | :--- |
-| Kotlin 2.0 + Jetpack Compose (Material 3) | 全部界面 |
-| AndroidX Media3 (ExoPlayer) 1.11 | 播放内核、通知与锁屏、车机会话 |
-| Room 2.6 (SQLite) | 曲库、歌单、收藏、播放历史 |
-| [Oboe](https://github.com/google/oboe) 1.9 (C++/JNI) | AAudio / OpenSL ES 输出与 USB DAC 独占 |
-| 自研 `CoverLoader`（MediaMetadataRetriever + LruCache） | 封面提取、按需降采样与内存缓存 |
-| `java.text.Collator` + 内置拼音首字表 | 曲名 A–Z 索引与中文排序 |
+* **Kotlin 2.0 + Jetpack Compose (Material 3)** —— 全部界面
+* **AndroidX Media3 (ExoPlayer) 1.11** —— 播放内核、通知与锁屏、车机会话
+* **Room 2.6 (SQLite)** —— 曲库、歌单、收藏、播放历史
+* **[Oboe](https://github.com/google/oboe) 1.9 (C++/JNI)** —— AAudio / OpenSL ES 输出与 USB DAC 独占
+* **自研 `CoverLoader`**（MediaMetadataRetriever + LruCache）—— 封面提取、按需降采样与内存缓存
+* **`java.text.Collator` + 内置拼音首字表** —— 曲名 A–Z 索引与中文排序
 
 纯 Kotlin + 一层 C++，无 Retrofit/无埋点/无广告；清单里**没有 `INTERNET` 权限**，
 抓包可以看到它一个字节都不往外发。
