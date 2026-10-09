@@ -145,17 +145,17 @@
 
 车机型号和系统版本不一，歌词通道有两套，本项目**同时发送**，谁支持谁生效：
 
-| 通道 | 载体 | 语义 |
-| :--- | :--- | :--- |
-| `ucar`（车机媒体框架） | `MediaMetadata.extras` | 一次给**整段 LRC**，车机按进度自己滚动 |
-| `vivomusicmix`（原子随身听） | `setSessionExtras()` 事件 | 逐行推送当前歌词行 |
+| 通道 | 说明 |
+| :--- | :--- |
+| `ucar` | 车机媒体框架。一次给**整段 LRC**，由车机按进度自己滚动 |
+| `vivomusicmix` | 原子随身听。逐行推送当前歌词行 |
 
 对应字段名：
 
 ```text
-ucar.media.metadata.LYRICS_WHOLE     整段 LRC
+ucar.media.metadata.LYRICS_WHOLE     整段 LRC（写入 MediaMetadata.extras）
 ucar.media.metadata.LYRICS_STATUS    固定 0（有歌词）
-vivomusicmix.extra.lrc_change        歌词变更事件
+vivomusicmix.extra.lrc_change        歌词变更事件（setSessionExtras）
 ```
 
 踩过的坑，都写进了注释：
