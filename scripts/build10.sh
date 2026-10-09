@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # 本机构建 vivo 白名单 10 合 1：一次产出 10 个「代码相同、只有包名不同」的已签名 APK，
-# 产物名 <包名>.apk —— 与 Release 附件命名一致。
+# 产物名 v<versionName>_<包名>.apk —— 与 Release 附件命名一致（版本号从 app/build.gradle 读，不写死）。
 #
 #   bash scripts/build10.sh                     # 全部 10 个 → dist/
 #   PKGS="com.tencent.weread" bash scripts/build10.sh   # 只构建指定包（调试用）
@@ -22,6 +22,12 @@ com.qidian.QDReader cn.aqzscn.stream_music"
 PKGS="${PKGS:-$ALL_PKGS}"
 
 mkdir -p "$OUT_DIR"
+
+# 版本号取自 app/build.gradle 的 versionName，文件名带上它免得跨版本混装
+VER=$(sed -n 's/^[[:space:]]*versionName "\([^"]*\)".*/\1/p' app/build.gradle | head -1)
+[ -n "$VER" ] || { echo "无法从 app/build.gradle 解析 versionName"; exit 1; }
+echo "versionName = $VER；产物名 v${VER}_<包名>.apk"
+
 echo "== 构建 ${PKGS} 共 $(echo $PKGS | wc -w) 个包 → $OUT_DIR/"
 
 for pkg in $PKGS; do
@@ -37,13 +43,13 @@ for pkg in $PKGS; do
     *-unsigned.apk ) echo "产物未签名（$out）—— 请先配签名凭据，见本脚本头部注释"; exit 1 ;;
   esac
 
-  cp "$out" "$OUT_DIR/$pkg.apk"
-  echo "  $out  →  $OUT_DIR/$pkg.apk"
+  cp "$out" "$OUT_DIR/v${VER}_$pkg.apk"
+  echo "  $out  →  $OUT_DIR/v${VER}_$pkg.apk"
   # 回读校验：包名必须与文件名一致。
   # （别在这里调 SDK 的 apksigner 封装脚本，本环境它会挂住；
   #   签名指纹用 sign-apk 一侧或 apksig 库校验。）
   if command -v aapt2 >/dev/null 2>&1; then
-    aapt2 dump badging "$OUT_DIR/$pkg.apk" 2>/dev/null | grep -E "^package:" | sed 's/^/  /'
+    aapt2 dump badging "$OUT_DIR/v${VER}_$pkg.apk" 2>/dev/null | grep -E "^package:" | sed 's/^/  /'
   fi
 done
 

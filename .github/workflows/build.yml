@@ -55,7 +55,13 @@ jobs:
       - name: Collect artifact
         run: |
           mkdir -p out
-          cp app/build/outputs/apk/release/*.apk out/
+          # 与 scripts/build10.sh / Release 附件同名：v<versionName>_<包名>.apk
+          VER=$(sed -n 's/^[[:space:]]*versionName "\([^"]*\)".*/\1/p' app/build.gradle | head -1)
+          ID=$(sed -n 's/^[[:space:]]*applicationId "\([^"]*\)".*/\1/p' app/build.gradle | head -1)
+          test -n "$VER"
+          APK=$(ls app/build/outputs/apk/release/*.apk | head -1)
+          cp "$APK" "out/v${VER}_${ID}.apk"
+          rm -f "$APK"   # 只留一份，避免 upload-artifact 的 path 匹配到两个文件
           ls -l out
 
       - name: Upload APK

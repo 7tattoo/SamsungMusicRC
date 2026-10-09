@@ -250,7 +250,7 @@ CI：`.github/workflows/build.yml` 每次 push 构建 Release APK 并上传为�
 gradle :app:assembleRelease -PoverrideAppId=cn.kuwo.kwmusiccar   # 或环境变量 OVERRIDE_APP_ID
 ```
 
-本地一条命令出齐这 10 个包（产物名就是 `<包名>.apk`，脚本不含任何口令）：
+本地一条命令出齐这 10 个包（产物名 `v<versionName>_<包名>.apk`，版本号取自 `app/build.gradle`，脚本不含任何口令）：
 
 ```bash
 bash scripts/build10.sh                        # 全部 10 个 → dist/
@@ -269,10 +269,11 @@ zip 里的文件名是工作流固定的 `com.<…>.apk` 格式（和 Release �
 
 **Release 页**：<https://github.com/7tattoo/SamsungMusicRC/releases/tag/v1.0.0>
 
-附件直接按**包名**命名（`com.spotify.music.apk`、`com.apple.android.music.apk`……共 10 个）——
-10 个包代码完全相同，只有包名不同，看文件名就知道它是哪个包名，想要哪个装哪个。
-版本号不在文件名里（10 个包都来自同一 commit，版本写在 tag 和 APK 内部：
-`versionName 1.0.0` / `versionCode 1`）。装进系统后显示的应用名统一是 `Samsung Music`。
+附件命名规范：**`v<versionName>_<包名>.apk`**（如 `v1.0.0_com.spotify.music.apk`、
+`v1.0.0_cn.kuwo.kwmusiccar.apk`……共 10 个）——
+10 个包代码完全相同，只有包名不同，看文件名就知道它是哪个包名、哪个版本，想要哪个装哪个。
+版本号取自 `app/build.gradle` 的 `versionName`（本地脚本与 CI 都从那里读，不写死）。
+装进系统后显示的应用名统一是 `Samsung Music`。
 
 Release 正文里有一张「文件名 → 包名 → 对应的正版应用」对照表，以及包名冲突、签名不一致的排查说明。
 

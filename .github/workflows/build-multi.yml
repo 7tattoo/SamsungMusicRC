@@ -2,7 +2,7 @@ name: Build 10-in-1 APKs
 
 # vivo 智能车载投屏只给白名单包名出桌面滚动歌词，所以一次出 10 个 applicationId 的包。
 # 10 个 job 并行，每个 job 用 -PoverrideAppId 换包名，其余代码完全相同。
-# 产物：<包名>.apk（7tattoo 签名，v1/v2/v3），与 GitHub Release 资产同名
+# 产物：v<versionName>_<包名>.apk（7tattoo 签名，v1/v2/v3），与本地 scripts/build10.sh、Release 资产同名
 
 on:
   workflow_dispatch:
@@ -88,10 +88,12 @@ jobs:
         run: |
           set -e
           mkdir -p out
-          # 文件名 = 包名。10 个包代码完全相同，只有包名不同；版本信息在 APK 内
-          # （versionName/versionCode）和 Release tag 上，不塞进文件名。
+          # 产物名 = v<versionName>_<包名>，与本地 scripts/build10.sh 和 Release 附件一致。
+          # 版本号从 app/build.gradle 读，不写死，免得改了版本忘了改工作流。
+          VER=$(sed -n 's/^[[:space:]]*versionName "\([^"]*\)".*/\1/p' app/build.gradle | head -1)
+          test -n "$VER"
           APK=$(ls app/build/outputs/apk/release/*.apk | head -1)
-          cp "$APK" "out/${{ matrix.id }}.apk"
+          cp "$APK" "out/v${VER}_${{ matrix.id }}.apk"
           ls -l out
 
       - name: Upload APK
