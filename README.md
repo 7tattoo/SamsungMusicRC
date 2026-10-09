@@ -98,10 +98,12 @@
 <tr><td align="center"><img src="docs/screenshots/car-01-library.jpg" width="330"><br>车机曲库（横屏双栏）</td></tr>
 <tr><td align="center"><img src="docs/screenshots/car-02-player.jpg" width="330"><br>车机播放页</td></tr>
 <tr><td align="center"><img src="docs/screenshots/car-03-lyrics.jpg" width="330"><br>车机歌词页</td></tr>
-<tr><td align="center"><img src="docs/screenshots/car-04-vivo-desktop-widget.jpg" width="330"><br>vivo Joviincar</td></tr>
+<tr><td align="center"><img src="docs/screenshots/car-04-vivo-desktop-widget.jpg" width="330"><br>JoviInCar 桌面滚动歌词</td></tr>
 </table>
 
 横屏车机自动切换为双栏布局（左信息 / 右歌词），底部保留 Dock 播控条。
+最后一张是投屏到车机后 vivo 桌面卡片上的滚动歌词——这条能力按包名白名单下发，
+详见下方《关于 vivo 原子通知 / JoviInCar 的适配》。
 
 最右那张是 **vivo 手机桌面（OriginOS 系统界面）** 上的"小V建议 · 音乐原子组件"卡片，不是车机界面：
 车机版通过 JoviInCar 协议把播放状态注册到系统，OriginOS 便在手机桌面上渲染这张卡片 —— 封面、曲名、
